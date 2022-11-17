@@ -1,0 +1,4 @@
+(fp_lib_table
+  (lib (name "User_library")(type "KiCad")(uri "C:/Users/AW_Lab_LYB/Documents/KiCad/Watch_1.0/Libraries/User_library.pretty")(options "")(descr ""))
+  (lib (name "footprints")(type "KiCad")(uri "C:/Users/AW_Lab_LYB/Downloads/ul_5034801000/KiCAD/2022-03-23_04-50-49/footprints.pretty")(options "")(descr ""))
+)

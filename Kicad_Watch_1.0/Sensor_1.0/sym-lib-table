@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name "User_library")(type "KiCad")(uri "C:/Users/AW_Lab_LYB/Documents/KiCad/Watch_1.0/Libraries/User_library.kicad_sym")(options "")(descr ""))
+  (lib (name "User_power")(type "KiCad")(uri "C:/Users/AW_Lab_LYB/Documents/KiCad/Watch_1.0/Libraries/User_power.kicad_sym")(options "")(descr ""))
+)

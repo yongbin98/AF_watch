@@ -1,0 +1,101 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP 1.3inch_TFT_LCD_ST7789
+D 1.3인치 TFT LCD 240x240픽셀
+$ENDCMP
+#
+$CMP ABM10W-25.0000MHZ-8-D1X-T3
+D 25MHz 크리스탈
+$ENDCMP
+#
+$CMP ABM12W-25.0000MHZ-7-B1U-T3
+D 25MHz 크리스탈
+$ENDCMP
+#
+$CMP ABS04W-32.768KHZ-6-D2-T5
+D 32.768kHz 크리스탈 1.2 x 1.0
+$ENDCMP
+#
+$CMP ADS131M04IRUKT
+D ADC 24-bit, 32-kSPS, 4-channel
+$ENDCMP
+#
+$CMP Battey_PAD
+D Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)
+K connector
+F ~
+$ENDCMP
+#
+$CMP CDBQR43-HF
+D 쇼트키다이오드 1005 metric
+$ENDCMP
+#
+$CMP E104-BT5005A
+D nRF52805 기반 초소형 블루투스모듈
+$ENDCMP
+#
+$CMP EVP-AWED2A
+D 택스위치 수직형 3x2x0.5 1.6N
+$ENDCMP
+#
+$CMP FH35C-25S-0.3SHW99
+D FFC 커넥터 25핀 0.3피치
+$ENDCMP
+#
+$CMP KC2016K2.04800C10E00
+D 표준 클록 발진기 2.0480MHZ Clock OSCIL CMOS
+$ENDCMP
+#
+$CMP LSM6DSMTR
+D 6축 가속도 자이로 센서
+$ENDCMP
+#
+$CMP MAX30208CLB+
+D 보드 탑재 온도 센서
+$ENDCMP
+#
+$CMP MAX86141ENP+T
+D PPG AFE
+$ENDCMP
+#
+$CMP MAX8814ETA+T
+D 리튬폴리머 충전IC
+$ENDCMP
+#
+$CMP MCU-U52105
+D Micro 5핀 USB커넥터
+$ENDCMP
+#
+$CMP MSDC-M61408
+D Micro SD카드 슬롯
+$ENDCMP
+#
+$CMP NSV60101DMTWTBG
+D 2채널 NPN 트랜지스터
+$ENDCMP
+#
+$CMP SFH_7070
+D PPG센서 포토다이오드 초록 LED
+$ENDCMP
+#
+$CMP SMT-0340-T-R
+D 3x3x2mm SMD 스피커
+$ENDCMP
+#
+$CMP TLV75518PDQNR
+D 1.8V LDO
+$ENDCMP
+#
+$CMP TLV803EA29DPWR
+D reset IC, X2SON-5
+$ENDCMP
+#
+$CMP TPS7A2018PDQNR
+D 1.8V LDO
+$ENDCMP
+#
+$CMP TPS7A2033PDQNR
+D 3.3V LDO
+$ENDCMP
+#
+#End Doc Library

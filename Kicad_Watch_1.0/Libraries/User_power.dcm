@@ -1,0 +1,28 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP GND
+D Power symbol creates a global label with name "U_GND" , reference supply ground
+K power-flag
+$ENDCMP
+#
+$CMP VAA_3.3V
+D Power symbol creates a global label with name "VAA_3_3V"
+K power-flag
+$ENDCMP
+#
+$CMP VBAT
+D Power symbol creates a global label with name "VBAT"
+K power-flag
+$ENDCMP
+#
+$CMP VDD_3.3V
+D Power symbol creates a global label with name "VDD_3_3V"
+K power-flag
+$ENDCMP
+#
+$CMP VPP_3.3V
+D Power symbol creates a global label with name "VPP_3_3V"
+K power-flag
+$ENDCMP
+#
+#End Doc Library

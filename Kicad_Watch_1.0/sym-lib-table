@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name "User_library")(type "KiCad")(uri "${KIPRJMOD}/Libraries/User_library.kicad_sym")(options "")(descr ""))
+  (lib (name "User_power")(type "KiCad")(uri "${KIPRJMOD}/Libraries/User_power.kicad_sym")(options "")(descr ""))
+)
