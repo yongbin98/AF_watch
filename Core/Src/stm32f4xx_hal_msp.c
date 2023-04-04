@@ -37,6 +37,8 @@ extern DMA_HandleTypeDef hdma_spi4_tx;
 
 extern DMA_HandleTypeDef hdma_spi5_tx;
 
+extern DMA_HandleTypeDef hdma_spi5_rx;
+
 extern DMA_HandleTypeDef hdma_uart7_tx;
 
 /* Private typedef -----------------------------------------------------------*/
@@ -507,6 +509,24 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
 
     __HAL_LINKDMA(hspi,hdmatx,hdma_spi5_tx);
 
+    /* SPI5_RX Init */
+    hdma_spi5_rx.Instance = DMA2_Stream5;
+    hdma_spi5_rx.Init.Channel = DMA_CHANNEL_7;
+    hdma_spi5_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_spi5_rx.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_spi5_rx.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_spi5_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma_spi5_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hdma_spi5_rx.Init.Mode = DMA_NORMAL;
+    hdma_spi5_rx.Init.Priority = DMA_PRIORITY_LOW;
+    hdma_spi5_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    if (HAL_DMA_Init(&hdma_spi5_rx) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+    __HAL_LINKDMA(hspi,hdmarx,hdma_spi5_rx);
+
     /* SPI5 interrupt Init */
     HAL_NVIC_SetPriority(SPI5_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(SPI5_IRQn);
@@ -595,6 +615,7 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef* hspi)
 
     /* SPI5 DMA DeInit */
     HAL_DMA_DeInit(hspi->hdmatx);
+    HAL_DMA_DeInit(hspi->hdmarx);
 
     /* SPI5 interrupt DeInit */
     HAL_NVIC_DisableIRQ(SPI5_IRQn);

@@ -41,6 +41,7 @@ void LSM6DS_FIFO_DATA_OUT(int16_t getDataPointer[6], int16_t count);
 void LSM6DS_FIFO_DATA_NUM(int16_t* getDataPointer);
 void LSM6DS_Reset(void);
 void LSM6DS_Reboot(void);
+void LSM6DS_GetGyroAccAll(int16_t get_dataPointer[6]);
 
 
 

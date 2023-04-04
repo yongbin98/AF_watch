@@ -41,6 +41,7 @@ watch_1.0\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
 watch_1.0\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
 watch_1.0\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h
 watch_1.0\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h
+watch_1.0\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h
 watch_1.0\main.o: ../FATFS/App/fatfs.h
 watch_1.0\main.o: ../Middlewares/Third_Party/FatFs/src/ff.h
 watch_1.0\main.o: ../Middlewares/Third_Party/FatFs/src/integer.h
@@ -54,12 +55,14 @@ watch_1.0\main.o: ../Lib/arm_math.h
 watch_1.0\main.o: ../Drivers/CMSIS/Include/core_cm4.h
 watch_1.0\main.o: ../Lib/arm_const_structs.h
 watch_1.0\main.o: ../Lib/arm_common_tables.h
+watch_1.0\main.o: ../Lib/constants.h
 watch_1.0\main.o: ../Lib/fir_constants.h
-watch_1.0\main.o: ../Lib/MAX17262/MAX17262.h
-watch_1.0\main.o: ../Lib/LSM6DS/LSM6DS.h
+watch_1.0\main.o: ../Lib/lcdscreen.h
 watch_1.0\main.o: ../Lib/st7789/st7789.h
 watch_1.0\main.o: ../Lib/st7789/fonts.h
+watch_1.0\main.o: ../Lib/MAX17262/MAX17262.h
+watch_1.0\main.o: ../Lib/fifo.h
+watch_1.0\main.o: ../Lib/LSM6DS/LSM6DS.h
 watch_1.0\main.o: ../Lib/AF_detect.h
 watch_1.0\main.o: ../Lib/MAX30003.h
-watch_1.0\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h
 watch_1.0\main.o: ../Lib/MAX86171.h

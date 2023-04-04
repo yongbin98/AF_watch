@@ -1,114 +1,51 @@
 #include "AF_detect.h"
 
-#define SAMPLE_N 16
-#define NUM_TAPS 100
-#define SAMPLE_RATE 50
-#define FILTERING_RATE 50 
-#define BLOCK_SIZE 400
-#define BUFF_SIZE BLOCK_SIZE * 2
-
-uint8_t getMax(uint8_t *n){
-	uint8_t max = n[0];
+float32_t AF_Normlaized_RMSSD(float32_t RRI[], float32_t RRI_mean){
 	
-	for (uint8_t i = 1; i < SAMPLE_N; i++)
-		if(n[i] > max) max = n[i];
-	
-	return max;
-}
-uint8_t getMin(uint8_t *n){
-	uint8_t min = n[0];
-	
-	for (uint8_t i = 1; i < SAMPLE_N; i++)
-		if(n[i] < min) min = n[i];
-	
-	return min;
-}
-float getMean(uint8_t *n){
-	int16_t sum = 0;
-	float mean = 0;
-	
-	for (uint8_t i = 0; i < SAMPLE_N; i++)
-		sum += n[i];
-	mean = ((float)sum/(float)SAMPLE_N);
-	
-	return mean;
-}
-
-float getMean_f(float *n){
-	float sum = 0;
-	float mean = 0;
-	
-	for (uint8_t i = 0; i < SAMPLE_N; i++)
-		sum += n[i];
-	mean = sum/SAMPLE_N;
-	
-	return mean;
-}
-int16_t getSum(int16_t *n){
-	int16_t sum=0;
-	
-	for (uint8_t i = 0; i < SAMPLE_N-1; i++)
-		sum += n[i];
-	
-	return sum;
-}
-
-uint8_t getSum_u(uint8_t *n){
-	uint8_t sum=0;
-	
-	for (uint8_t i = 0; i < SAMPLE_N-1; i++)
-		sum += n[i];
-	
-	return sum;
-}
-
-float AF_Normlaized_RMSSD(uint8_t RRI[]){
-	
-	int16_t tmp[SAMPLE_N - 1] = {0,};
-	float rmssd;
+	float32_t tmp[SAMPLE_N - 1] = {0,},sum_tmp = 0, rmssd;
 	
 	for(uint8_t i = 1;i<SAMPLE_N;i++){
 		tmp[i-1] = RRI[i] - RRI[i-1];
 		tmp[i-1] = pow(tmp[i-1],2);
+		sum_tmp += tmp[i-1];
 	}
 	
-	rmssd = sqrt(((float)getSum(tmp)/(float)(SAMPLE_N-1)));
-	rmssd /= getMean(RRI);
+	rmssd = sqrt(((float32_t)(sum_tmp)/(float32_t)(SAMPLE_N-1)));
+	rmssd /= RRI_mean;
 
 	return rmssd;
 }
-float AF_Shannon_Entropy(uint8_t RRI[]){
-	uint8_t RRI_max = getMax(RRI);
-	uint8_t RRI_min= getMin(RRI);
+float32_t AF_Shannon_Entropy(float32_t RRI[]){
 	uint8_t RRI_group[SAMPLE_N] = {0,};
 	uint8_t tmp;
-	float shaanon_E = 0;
-	float norm_group[SAMPLE_N]={0,};
+	float32_t shaanon_E = 0, norm_group[SAMPLE_N]={0,}, RRI_max, RRI_min;
+	arm_max_f32(RRI,SAMPLE_N,&RRI_max,0);
+	arm_min_f32(RRI,SAMPLE_N,&RRI_min,0);
 	
-	float RRI_step = (float) (RRI_max-RRI_min)/SAMPLE_N;
+	float32_t RRI_step = (float32_t) (RRI_max-RRI_min)/SAMPLE_N;
 	
 	if(RRI_step == 0)
 		return RRI_step;
 	else{
 		for(uint8_t i = 0;i<SAMPLE_N;i++){
-			tmp = round((float)(RRI[i]-RRI_min)/RRI_step);
+			tmp = round((float32_t)(RRI[i]-RRI_min)/RRI_step);
 			RRI_group[tmp]++;
 		}
 		for(uint8_t i = 0;i<SAMPLE_N;i++)
-			norm_group[i] = (float)RRI_group[i]/(float)SAMPLE_N;
+			norm_group[i] = (float32_t)RRI_group[i]/(float32_t)SAMPLE_N;
 		
 		for(uint8_t i = 0;i<SAMPLE_N;i++)
 			if(norm_group[i]>0)
 				shaanon_E+=(norm_group[i]*logf(norm_group[i]));
 	}
 	
-	shaanon_E/=logf((float)1/(float)SAMPLE_N);
+	shaanon_E/=logf((float32_t)1/(float32_t)SAMPLE_N);
 	return shaanon_E;
 }
-float AF_Sample_Entropy(uint8_t RRI[]){
+float32_t AF_Sample_Entropy(float32_t RRI[], float32_t RRI_mean){
 	uint8_t m = 1;
-	float r = 0.06, xm[SAMPLE_N-1]={0,}, xm1[2][SAMPLE_N-1]={0,};
-	float RRI_mean = getMean(RRI), sample_entropy;
+	float32_t r = 0.06, xm[SAMPLE_N-1]={0,}, xm1[2][SAMPLE_N-1]={0,};
+	float32_t sample_entropy;
 	uint16_t Sum_Nm1 = 0, Sum_Nm2 = 0; 
 	
 	for(uint8_t i = 0;i<SAMPLE_N-m;i++){
@@ -134,38 +71,40 @@ float AF_Sample_Entropy(uint8_t RRI[]){
 					comp2[j]=1;
 			}
 		}
-		Sum_Nm1 += getSum_u(comp1);
-		Sum_Nm2 += getSum_u(comp2);
+		for(int j = 0; j < SAMPLE_N; j++){
+			Sum_Nm1 += comp1[j];
+			Sum_Nm2 += comp2[j];
+		}
 	}
 		
 	if(Sum_Nm1==0)
 		sample_entropy=0;
 	else if(Sum_Nm2 == 0)
-		sample_entropy=-logf((float)1/(float)Sum_Nm1);
+		sample_entropy=-logf((float32_t)1/(float32_t)Sum_Nm1);
 	else
-		sample_entropy=-logf((float)Sum_Nm2/(float)Sum_Nm1);
+		sample_entropy=-logf((float32_t)Sum_Nm2/(float32_t)Sum_Nm1);
 	
 	return sample_entropy;
 }
-float AF_Kurtosis(uint8_t RRI[]){
-	float mean_data = getMean(RRI);
-	float a[SAMPLE_N], b[SAMPLE_N], c[SAMPLE_N], kurtosis;
+float32_t AF_Kurtosis(float32_t RRI[], float32_t mean_data){
+	float32_t a[SAMPLE_N], b[SAMPLE_N], c[SAMPLE_N], kurtosis;
 		
 	for(uint8_t i=0;i<SAMPLE_N;i++){
 		a[i] = RRI[i] - mean_data;
 		b[i] = pow(a[i],2);
 		c[i] = pow(a[i],4);
 	}
-	b[0] = getMean_f(b);
-	c[0] = getMean_f(c);
+	float32_t mean_b, mean_c;
+	arm_mean_f32(b,SAMPLE_N,&mean_b);
+	arm_mean_f32(c,SAMPLE_N,&mean_c);
 	
-	kurtosis = c[0]/pow(b[0],2);
+	kurtosis = mean_c/pow(mean_b,2);
 	return kurtosis;
 }
 
-float AF_Turning_Point_Ratio(uint8_t RRI[]){
+float32_t AF_Turning_Point_Ratio(float32_t RRI[]){
 	uint8_t cnt = 0;
-	float tpr;
+	float32_t tpr;
 	
 	for(uint8_t i=1;i<SAMPLE_N-1;i++){
 		if(RRI[i] > RRI[i-1] && RRI[i] > RRI[i+1])
@@ -178,11 +117,10 @@ float AF_Turning_Point_Ratio(uint8_t RRI[]){
 	
 	return tpr;
 }
-uint8_t AF_Peak_detection(float filtered_ppgDataF[], uint8_t RRI[]){
+uint8_t AF_Peak_detection(float32_t filtered_ppgDataF[], int16_t RRI[]){
 	uint8_t cnt=0;
 	uint16_t peak_idx[100]={0,};
-	float peak_amp[100]={0,};
-	float mean = 0;
+	float32_t peak_amp[100]={0,};
 	uint8_t sec_thres = SAMPLE_RATE*0.3;
 	uint8_t mountain_count = 0;
 	

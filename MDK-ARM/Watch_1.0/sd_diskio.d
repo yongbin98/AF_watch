@@ -46,6 +46,7 @@ watch_1.0\sd_diskio.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
 watch_1.0\sd_diskio.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
 watch_1.0\sd_diskio.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h
 watch_1.0\sd_diskio.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h
+watch_1.0\sd_diskio.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h
 watch_1.0\sd_diskio.o: ../FATFS/Target/bsp_driver_sd.h
 watch_1.0\sd_diskio.o: ../FATFS/Target/fatfs_platform.h
 watch_1.0\sd_diskio.o: ../FATFS/Target/sd_diskio.h

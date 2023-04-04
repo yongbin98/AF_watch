@@ -1,5 +1,6 @@
 watch_1.0\max86171.o: ..\Lib\MAX86171.c
 watch_1.0\max86171.o: ..\Lib\MAX86171.h
+watch_1.0\max86171.o: ../Core/Inc/main.h
 watch_1.0\max86171.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h
 watch_1.0\max86171.o: ../Core/Inc/stm32f4xx_hal_conf.h
 watch_1.0\max86171.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_rcc.h
@@ -37,8 +38,8 @@ watch_1.0\max86171.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_spi.h
 watch_1.0\max86171.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h
 watch_1.0\max86171.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h
 watch_1.0\max86171.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h
-watch_1.0\max86171.o: ../Core/Inc/main.h
 watch_1.0\max86171.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
 watch_1.0\max86171.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
 watch_1.0\max86171.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h
 watch_1.0\max86171.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h
+watch_1.0\max86171.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h

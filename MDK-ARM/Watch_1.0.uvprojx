@@ -337,9 +337,9 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>USE_HAL_DRIVER,STM32F413xx, __FPU_PRESENT, ARM_MATH_CM4</Define>
+              <Define>USE_HAL_DRIVER,STM32F413xx, ARM_MATH_CM4, __FPU_PRESENT</Define>
               <Undefine></Undefine>
-              <IncludePath>../FATFS/Target;../FATFS/App;../Core/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FatFs/src;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../Lib</IncludePath>
+              <IncludePath>../FATFS/Target;../FATFS/App;../Core/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FatFs/src;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../Lib;../Drivers/CMSIS/DSP/Include;../Drivers/CMSIS/DSP/DSP_Lib_TestSuite/RefLibs/inc</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -424,19 +424,24 @@
               <FilePath>..\Lib\MAX30003.c</FilePath>
             </File>
             <File>
-              <FileName>arm_fir_f32.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Lib\arm_fir_f32.c</FilePath>
-            </File>
-            <File>
-              <FileName>arm_fir_init_f32.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Lib\arm_fir_init_f32.c</FilePath>
-            </File>
-            <File>
               <FileName>AF_detect.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Lib\AF_detect.c</FilePath>
+            </File>
+            <File>
+              <FileName>fifo.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\fifo.c</FilePath>
+            </File>
+            <File>
+              <FileName>lcdscreen.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\lcdscreen.c</FilePath>
+            </File>
+            <File>
+              <FileName>fft.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Lib\fft.c</FilePath>
             </File>
             <File>
               <FileName>main.c</FileName>
@@ -711,9 +716,99 @@
           <GroupName>Drivers/CMSIS</GroupName>
           <Files>
             <File>
+              <FileName>arm_cmplx_mag_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\ComplexMathFunctions\arm_cmplx_mag_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_fir_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\FilteringFunctions\arm_fir_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_fir_init_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\FilteringFunctions\arm_fir_init_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_mean_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\StatisticsFunctions\arm_mean_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_scale_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\BasicMathFunctions\arm_scale_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_sub_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\BasicMathFunctions\arm_sub_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_min_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\StatisticsFunctions\arm_min_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_max_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\StatisticsFunctions\arm_max_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_rfft_fast_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\TransformFunctions\arm_rfft_fast_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_rfft_fast_init_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\TransformFunctions\arm_rfft_fast_init_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_common_tables.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\CommonTables\arm_common_tables.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_cfft_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\TransformFunctions\arm_cfft_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_cfft_radix8_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\TransformFunctions\arm_cfft_radix8_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_bitreversal.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\TransformFunctions\arm_bitreversal.c</FilePath>
+            </File>
+            <File>
+              <FileName>bitreversal.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\DSP_Lib_TestSuite\RefLibs\src\TransformFunctions\bitreversal.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_const_structs.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\CommonTables\arm_const_structs.c</FilePath>
+            </File>
+            <File>
               <FileName>system_stm32f4xx.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Core/Src/system_stm32f4xx.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_offset_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\BasicMathFunctions\arm_offset_f32.c</FilePath>
+            </File>
+            <File>
+              <FileName>arm_mult_f32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\CMSIS\DSP\Source\BasicMathFunctions\arm_mult_f32.c</FilePath>
             </File>
           </Files>
         </Group>

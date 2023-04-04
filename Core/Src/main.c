@@ -22,14 +22,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
 #include "arm_math.h"
 #include "arm_const_structs.h"
-#include "fir_constants.h"
 
-#include "MAX17262/MAX17262.h"
+#include "constants.h"
+#include "fir_constants.h"
+#include "lcdscreen.h"
+#include "fifo.h"
 #include "LSM6DS/LSM6DS.h"
-#include "st7789/st7789.h"
 #include "AF_detect.h"
 #include "MAX30003.h"
 #include "MAX86171.h"
@@ -69,6 +69,7 @@ DMA_HandleTypeDef hdma_spi2_tx;
 DMA_HandleTypeDef hdma_spi4_rx;
 DMA_HandleTypeDef hdma_spi4_tx;
 DMA_HandleTypeDef hdma_spi5_tx;
+DMA_HandleTypeDef hdma_spi5_rx;
 
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim6;
@@ -80,15 +81,12 @@ DMA_HandleTypeDef hdma_uart7_tx;
 
 /* USER CODE BEGIN PV */
 
-//SD 관련 구조체
-FRESULT res;	
-FATFS SDFatFs;
-FIL ECG_fp;
-FIL PPG_fp;
-FIL IMU_fp;
-DIR dir;
-FILINFO fno;
-char SD_msg[100];
+
+//extern
+bool sd_cnt = false;
+bool bat_cnt = false; // bat init -> true
+bool ble_cnt = false;
+int16_t server_dataN = 1;
 
 //MAX30003
 uint8_t max30003_RxData[4]; // ECG temporary RxData
@@ -114,9 +112,6 @@ uint8_t sw_L_flag=0; //the number of times the left button was pressed in time
 uint8_t sw_R_flag=0; //the number of times the right button was pressed in time
 uint8_t sw_C_flag=0; //the number of times the center button was pressed in time
 
-//Battery
-uint8_t battery_value=0;
- 
 //IMU
 
 LSM6DS_AccelSetting LSM6DSM_IMUSetting={
@@ -132,30 +127,20 @@ LSM6DS_AccelSetting LSM6DSM_IMUSetting={
 
 //uint8_t I2C_TxData[2]={0x0F};
 uint8_t I2C_RxData[3] = {0,}; // I2c_RxData (use only init)
-int16_t I2C_BurstData[240]; // buffer[40] -> acc x, acc y, acc z, gyro x, gyro y, gyro z 
-int16_t I2C_Stat[1]; // I2c status
-int16_t I2C_polling_data[1];
-
-//LCD
-st7789 st7789_PFP; // lcd init address
-char lcd_str[40]; // lcd message
+//int16_t I2C_BurstData[240]; // buffer[40] -> acc x, acc y, acc z, gyro x, gyro y, gyro z 
+//int16_t I2C_Stat[1]; // I2c status
+int16_t I2C_Polling_data[1];
+int16_t I2C_Polling_buffer[6] = {0};
 
 //FLAG
-uint8_t file_count = 0; // check the number of previous file 
-uint8_t folder_count = 0; // check the number of previous folder 
 uint8_t spk_switch = 0; // OFF : 0, ON : 1, OFF ~ing : 2, ON ~ing : 3
 uint16_t time_flag2 = 0; // 0.1s time check
 uint16_t error_code = 0; // error code
 char error_msg[30]; // error message
-float64_t AF_shannon=0, AF_sample=0, AF_rmssd=0; // save rmssd, sample entropy, shannon entropy
-uint8_t AF_rri = 0; // the number of rri 
-uint8_t PPI[RRI_COUNT] = {0,}; // save recent 16 rri data
-uint8_t Peak_Interval[10] = {0,}; // received rri
+uint8_t AF_rri = 0; // the number of rri
+uint8_t PPI_idx = 0; // the number of bpm(fft)
 
 //layout
-bool ble_cnt = false; // ble init -> true
-bool bat_cnt = false; // bat init -> true
-bool sd_cnt = false; // sd init -> true
 bool file_init = false; // file init -> true
 bool left_btn = false; // left btn interrupt -> true
 bool right_btn = false; // right btn interrupt -> true
@@ -164,25 +149,29 @@ bool btn_flag = false; // btn interrupt -> true
 uint16_t pull_btn_time = 0; // how long pull btn ( passing one second -> reset)
 uint16_t btn_pressing = 0; // how long btn pressing
 LCD_SCREEN_TYPE screen_status = LCD_MAINSCREEN; // now screen
-uint8_t menu_btn_count = 0; // menu screen 5 btn
-uint8_t server_btn_count = 0; // server menu 3 btn
-uint8_t server_layout = 0; // server layout : 0 = send amount, 1 = ble wait, 2 = send data
-uint16_t screen_dot = 0; // server connect
-uint8_t AF_layout = 0;
-uint8_t screen_flag = 0;
-
-//PPG ECG layout
-uint8_t line_x = 0; // now x_line loc
-int32_t line_y1 = 0, line_y2=0; // previous y_line , next y_line
-int32_t base_line_y=0, max_line_y=0, min_line_y=0; // y_line threshold (mean max min)
+int8_t menu_select = 0; // menu screen 5 btn
+int8_t server_select = 0; // server menu 3 btn
+int8_t screen_flag = 0;
+int8_t af_select = 0;
 
 //filter
 arm_fir_instance_f32 S; // fir filter init
-static float32_t firStateF32[BLOCK_SIZE + NUM_TAPS - 1]; // fir filter init
-float32_t newPpgDataFN[BUFF_SIZE] = {0,}; // circular queue
-float32_t fir_LCD_data[FILTERING_RATE] = {0,}; // LCD PPG data
+arm_rfft_fast_instance_f32 S2; 
+float32_t *firStateF32; 
+float32_t *newPpgDataFN; // circular queue
+int16_t *PPI; // save recent 16 rri data
+int16_t *Peak_Interval; // received rri
+float32_t *fft_inputDataF;
+float32_t *fft_outputDataF;
 uint16_t Filter_Idx = 0; // check data number
-uint16_t fir_threshold = 0; // fir threshold > filtering rate -> do it
+
+//fft
+int32_t bufferACC[500] = {0};
+int32_t bufferGYRO[500] = {0};
+int32_t fifoACC[250][3] = {0};
+int32_t fifoGYRO[250][3] = {0};
+uint16_t iterator_IMU = 0;
+uint16_t iteratorFifoIMU = 0;
 
 /* USER CODE END PV */
 
@@ -204,41 +193,23 @@ static void MX_IWDG_Init(void);
 /* USER CODE BEGIN PFP */
 
 void HPF(int32_t *Input, float SamplingFrequency, float CutOffFrequency);
-void FIFO_Init_W(void);
-void FIFO_Init_R(uint8_t file_number);
 void Data_Update(void);
-void FIFO_Close(void);
-void DATA_FIFO(void);
-void LCD_Init(void);
-void LCD_Reset_Screen(void);
-void LCD_AF_Screen(void);
-void LCD_MAIN_Screen(void);
-void LCD_MENU_Screen(void);
-void LCD_PPG_Screen(void);
-void LCD_ECG_Screen(void);
-void LCD_SAVE_Screen(void);
-void LCD_SERVER_Screen(void);
 void UF_speaker_ON(void);
 void UF_speaker_OFF(void);
-void SD_Init(void);
 void DNN_Run(void);
 void AF_Algorithm(void);
 void AF_Layer_rescale(float *AF_Rescale);
-void AF_Show_Data(void);
+void save_algorithm(void);
+void server_algorithm(void);
 void SwitchFunction(void);
 void Bluetooth_init(void);
-void Directory_check(void);
 void Set_StandbyMod(void);
 void btn_flag_reset(void);
 void ECG_PPG_IMU_reset(void);
-void dot_screen_moving(char dot_msg[]);
-void acc_warning(void);
 void ECG_Update(void);
 void PPG_Update(void);
-void IMU_Update(void);
-void IMU_Polling_Update(void);
 void Data_Send(void);
-void Folder_Read_Write(uint8_t folder_N);
+void data_fifo(void);
 
 /* USER CODE END PFP */
 
@@ -251,7 +222,7 @@ int fputc(int ch, FILE *f)
   /* Place your implementation of fputc here */
   /* e.g. write a character to the USART2 and Loop until the end of transmission */
   uint8_t temp[1]={ch};
-	while(HAL_UART_Transmit(&huart7, (uint8_t *)&temp, 1, HAL_MAX_DELAY) != HAL_OK);
+	while(HAL_UART_Transmit(&huart7, (uint8_t *)&temp, 1, 1000) != HAL_OK);
   return ch;
 }
 
@@ -344,13 +315,15 @@ int main(void)
 	
 	/* VPPEN */
 	HAL_GPIO_WritePin(VPP_EN_GPIO_Port,VPP_EN_Pin,GPIO_PIN_SET);
+	if(!HAL_GPIO_ReadPin(BAT_CG_POK_GPIO_Port,BAT_CG_POK_Pin))
+		Set_StandbyMod();
   HAL_Delay(100);
 	
 	/* watch dog */
 	__HAL_DBGMCU_FREEZE_IWDG();
 	
 	/* LCD init */
-	LCD_Init();
+	screen_init(&htim9);
 	
 	/* Battery Monitoring */
 	MAX17262_init();
@@ -366,6 +339,7 @@ int main(void)
 		error_code=100;
 		Error_Handler(); 
 	}
+	HAL_IWDG_Refresh(&hiwdg);
 	
 	if(MAX86171_init() == 0) { 
 		error_code=101;
@@ -373,31 +347,24 @@ int main(void)
 	}
 	
 	/* SD Init */
-	SD_Init();
+	HAL_IWDG_Refresh(&hiwdg);
+	sd_cnt = sd_init();
 	
 	/* LCD Screen */	
-	ST7789_DrawFilledRectangle2(&st7789_PFP, 0, 0, 240, 240, FLIP_RGB(BLACK));
-	ST7789_DrawFilledRectangle2(&st7789_PFP, 0, 0, 240, 40, FLIP_RGB(WHITE));
-	battery_value=MAX17262_Get_BatPercent();
-	LCD_MAIN_Screen();
+	reset_screen(screen_status);
 	
 	/*interrupt (TIMER, BLUETOOTH) */
 	HAL_TIM_Base_Start_IT(&htim6);
 	HAL_TIM_Base_Start_IT(&htim7);	
-	
-	/* FIR init */
-	arm_fir_init_f32(&S, NUM_TAPS, (float32_t *)&PPG_coeffs[0], (float32_t *)&firStateF32[0], BLOCK_SIZE);
-	
+		
 	/* IMU init */
 	LSM6DS_Reset();
-	LSM6DS_GetBeing(&LSM6DSM_IMUSetting ,I2C_RxData);	//자이로 가속도 센서 활성화
+	LSM6DS_GetBeing_polling(&LSM6DSM_IMUSetting ,I2C_RxData);	//자이로 가속도 센서 활성화
 		
 	/* start ECG PPG */
 	max30003_Synch();
 	MAX86171_writeReg(PPG_FIFO_CONFIG_2, 0x1E);
 	time_flag2++;
-	
-	
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -417,32 +384,48 @@ int main(void)
 		//LCD update
 		switch (screen_status){
 			case LCD_MAINSCREEN: 
-				if(time_flag2%2 == 0)
-					LCD_MAIN_Screen();
+				if(time_flag2%2 == 0){
+					int16_t acc = bufferACC[iterator_IMU-1];
+					int16_t gyro = bufferGYRO[iterator_IMU-1];
+					int32_t ppg = max86171_data[0].data;
+					int32_t ecg = max30003_data[0].data;
+					if(main_screen(left_btn, ok_btn, right_btn, acc, gyro, ppg, ecg)){
+						sd_cnt = sd_init();			
+					}
+				}
 				break;
 			case LCD_MENUSCREEN: 
-				LCD_MENU_Screen();
+				menu_screen(menu_select, left_btn, ok_btn, right_btn);
 				break;
 			case LCD_PPGSCREEN:
-				if(max86171_step != 0)
-					LCD_PPG_Screen();
+				if(max86171_step != 0){
+					ppg_screen(max86171_step, max86171_data);
+					max86171_step = 0;
+				}
 				break;
 			case LCD_ECGSCREEN:
-				if(max30003_step != 0)
-					LCD_ECG_Screen();
+				if(max30003_step != 0){
+					ecg_screen(max30003_step, max30003_data);
+					max30003_step = 0;					
+				}
 				break;
 			case LCD_AFSCREEN:
-				LCD_AF_Screen();
 				AF_Algorithm();
+				if(diagnose_screen(screen_flag, time_flag2, af_select))
+					spk_switch = 1;
 				break;
 			case LCD_SAVESCREEN:
-				if((time_flag2%10) == 0)
-					LCD_SAVE_Screen();
-				if(file_init)
-					DATA_FIFO();
+				if((time_flag2%10) == 0){					
+					int32_t ppg = max86171_data[0].data;
+					int32_t ecg = max30003_data[0].data;					
+					save_screen(file_init, time_flag2, bufferGYRO[iterator_IMU-1], ppg, ecg);
+				}
+				save_algorithm();
+				
 				break;
 			case LCD_SERVERSCREEN:
-				LCD_SERVER_Screen();
+				server_algorithm();
+				server_screen(screen_flag, server_select);
 				break;
 		}
 		
@@ -781,9 +764,9 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 125-1;
+  htim6.Init.Prescaler = 200-1;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 1563-1;
+  htim6.Init.Period = 10000-1;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -946,6 +929,9 @@ static void MX_DMA_Init(void)
   /* DMA2_Stream4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream4_IRQn);
+  /* DMA2_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream5_IRQn);
   /* DMA2_Stream6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream6_IRQn);
@@ -1019,7 +1005,7 @@ static void MX_GPIO_Init(void)
   HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI4_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 14, 0);
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 }
@@ -1046,7 +1032,7 @@ void Bluetooth_init(void)
 	if(strncmp(Rx_Buffer, "+OK=V1.0", 8)==0)
 	{
 		//sprintf(lcd_str, "BT_Init...");
-		//ST7789_WriteString2(1, 1, lcd_str, Font_16x26, FLIP_RGB(BLUE), FLIP_RGB(WHITE));
+		//ST7789_WriteString(1, 1, lcd_str, Font_16x26, FLIP_RGB(BLUE), FLIP_RGB(WHITE));
 		//제조업체 정보 변경
 		printf("AT+DEVMANUF=BAMI");
 		HAL_Delay(100);
@@ -1116,39 +1102,47 @@ void Bluetooth_init(void)
 	ble_cnt = true;
 }
 
-void SwitchFunction(void)
-{
+void SwitchFunction(void){
 	if(sw_flag == 0 & btn_flag == true){ // sw_flag 0 -> 1 == when pressed
 		sw_flag++;
 		// screen
 		if(screen_status != LCD_MENUSCREEN){
 			if(left_btn){
-				if(screen_status == LCD_SAVESCREEN){
-					if(file_init){	FIFO_Close();}					
+				if(screen_status == LCD_ECGSCREEN || screen_status == LCD_PPGSCREEN){
+					reset_line();
 				}
 				if(screen_status == LCD_SERVERSCREEN){
-					server_layout = 0;
-					memset(Rx_read_data,0,sizeof(Rx_read_data));
-					if(file_init){	FIFO_Close();}
-				}
-				if(screen_status == LCD_ECGSCREEN || screen_status == LCD_PPGSCREEN || screen_status == LCD_AFSCREEN){
-					line_x = 0;
-					base_line_y = 0;
-					memset(Rx_read_data,0,sizeof(Rx_read_data));
+					server_dataN = 1;
 				}
 				if(screen_status == LCD_AFSCREEN){
 					MAX86171_adjust_clock(1,128);
-					memset(newPpgDataFN,0,sizeof(newPpgDataFN));
-					memset(PPI,0,sizeof(PPI));
+					AF_rri = 0;
+					if(screen_flag != -1){
+						free(firStateF32);
+						free(newPpgDataFN);
+						free(PPI);
+						if(af_select){
+							free(fft_inputDataF);
+							free(fft_outputDataF);
+						}
+						else
+							free(Peak_Interval);
+					}
+					PPI_idx = 0;
 					Filter_Idx = 0;
-					fir_threshold = 0;
-					AF_layout = 0;
-					if(file_init)
-						FIFO_Close();
 				}
-				time_flag2 = 0;
+				screen_flag = 0;
+				memset(Rx_read_data,0,sizeof(Rx_read_data));
+				if(file_init){	
+					if(FIFO_Close()){
+						error_code = 202;
+						Error_Handler();							
+					}
+					file_init = false;	
+				}
+				time_flag2 = 0;				
 				screen_status = LCD_MENUSCREEN;
-				LCD_Reset_Screen();
+				reset_screen(screen_status);
 				btn_flag_reset();
 			}
 		}
@@ -1156,20 +1150,21 @@ void SwitchFunction(void)
 			if(left_btn){
 				time_flag2=1;
 				screen_status = LCD_MAINSCREEN;
-				LCD_Reset_Screen();
+				reset_screen(screen_status);
 				btn_flag_reset();
 			}
 			if(right_btn){
 				sprintf(lcd_str, "<<");
-				ST7789_WriteString2(200, menu_btn_count*30 +60, lcd_str, Font_11x18, FLIP_RGB(BLACK), FLIP_RGB(BLACK));
-				menu_btn_count++;
-				if(menu_btn_count == 5)
-					menu_btn_count = 0;
+				ST7789_WriteString(200, menu_select*30 +60, lcd_str, Font_11x18, FLIP_RGB(BLACK), FLIP_RGB(BLACK));
+				if(menu_select >= 4)
+					menu_select = 0;
+				else
+					menu_select++;
 				right_btn = false;
 			}
 			if(ok_btn){ // status select				
 				btn_flag_reset();
-				switch(menu_btn_count){
+				switch(menu_select){
 					case 0:
 						//PPG
 						ECG_PPG_IMU_reset();
@@ -1182,84 +1177,118 @@ void SwitchFunction(void)
 						break;
 					case 2:
 						//AF
-						if(sd_cnt){
-							FIFO_Init_W();							
-							LCD_Reset_Screen();
-							screen_flag = 0;
-							time_flag2=1;
-						}
+						screen_flag = -1;
 						screen_status = LCD_AFSCREEN;
-						MAX86171_adjust_clock(0,SAMPLE_RATE); // sample rate 50
-						ECG_PPG_IMU_reset();
+//						if(FIFO_Init_W()){
+//							error_code = 202;
+//							Error_Handler();
+//						}
+//						file_init = true;
 						break;
 					case 3:
 						//SAVE
+						if(sd_cnt){
+							if(FIFO_Init_W()){
+								error_code = 202;
+								Error_Handler();
+							}
+							file_init = true;
+							reset_screen(screen_status);
+							time_flag2++;
+							ECG_PPG_IMU_reset();
+						}
 						screen_status = LCD_SAVESCREEN;
 						break;
 					case 4:
 						//SERVER
-						if(!sd_cnt)
-							server_layout = 99;
-						else
-							server_layout = 0;
 						screen_status = LCD_SERVERSCREEN;
 						break;
 				}
-				LCD_Reset_Screen();
-				ok_btn = false;		
-			}
-		}
-		else if(screen_status == LCD_SAVESCREEN){
-			if(ok_btn && sd_cnt){
-				LCD_Reset_Screen();
-				if(file_init){
-					FIFO_Close();
-					time_flag2=0;
-				}
-				else {
-					//reset
-					ECG_PPG_IMU_reset();
-					FIFO_Init_W();
-					time_flag2=1;
-				}
+				reset_screen(screen_status);
 				ok_btn = false;
 			}
 		}
-		else if(screen_status == LCD_SERVERSCREEN){
-			if(server_layout == 0){
+		else if(screen_status == LCD_AFSCREEN){
+			if(screen_flag == -1){
 				if(ok_btn){
-					server_layout++;
+					if(sd_cnt){
+						time_flag2=1;
+						ECG_PPG_IMU_reset();
+					}
+					if(af_select == 0){
+						// sample rate 50
+						firStateF32 = (float32_t *)calloc((BLOCK_SIZE + NUM_TAPS - 1), sizeof(float32_t));
+						arm_fir_init_f32(&S, NUM_TAPS, (float32_t *)PPG_coeffs, (float32_t *)&firStateF32[0], BLOCK_SIZE);
+						newPpgDataFN = (float32_t *)calloc((BUFF_SIZE), sizeof(float32_t));
+						Peak_Interval = (int16_t *)calloc((3*BLOCK_SIZE/SAMPLE_RATE), sizeof(int16_t));
+						MAX86171_adjust_clock(1,SAMPLE_RATE);
+					}else if(af_select == 1){
+						// sample rate 25
+						firStateF32 = (float32_t *)calloc((BLOCK_SIZE_FFT + NUM_TAPS_FFT - 1), sizeof(float32_t));
+						arm_fir_init_f32(&S, NUM_TAPS_FFT, (float32_t *)PPG_coeffs2, (float32_t *)&firStateF32[0], BLOCK_SIZE_FFT);
+						newPpgDataFN = (float32_t *)calloc((BUFF_SIZE_FFT), sizeof(float32_t));
+						fft_inputDataF = (float32_t *)calloc(NFFT*2, sizeof(float32_t));
+						fft_outputDataF = (float32_t *)calloc(NFFT, sizeof(float32_t));
+						MAX86171_adjust_clock(1,SAMPLE_RATE_FFT);
+						iterator_IMU = 0;
+					}
+					PPI = (int16_t *)calloc(RRI_COUNT,sizeof(int16_t));
+					screen_flag++;
+					reset_screen(screen_status);
 					ok_btn = false;
-					LCD_Reset_Screen();
 				}
 				if(right_btn){
 					sprintf(lcd_str, "<<");
-					ST7789_WriteString2(200, server_btn_count*60 +60, lcd_str, Font_11x18, FLIP_RGB(BLACK), FLIP_RGB(BLACK));
-					if(server_btn_count >= 2)
-						server_btn_count = 0;
+					ST7789_WriteString(200, af_select*60 +60, lcd_str, Font_11x18, FLIP_RGB(BLACK), FLIP_RGB(BLACK));
+					if(af_select >= 2)
+						af_select = 0;
 					else
-						server_btn_count++;
+						af_select++;					
 					right_btn = false;
 				}
 			}
-			else if(server_layout == 1){
-				
+		}
+		else if(screen_status == LCD_SAVESCREEN){
+//			if(ok_btn){
+//				
+//			}
+		}
+		else if(screen_status == LCD_SERVERSCREEN){
+			if(screen_flag == 0){
+				if(ok_btn){
+					screen_flag++;
+					time_flag2 = 1;
+					ok_btn = false;
+					reset_screen(screen_status);
+				}
+				if(right_btn){
+					sprintf(lcd_str, "<<");
+					ST7789_WriteString(200, server_select*60 +60, lcd_str, Font_11x18, FLIP_RGB(BLACK), FLIP_RGB(BLACK));
+					if(server_select >= 2)
+						server_select = 0;
+					else
+						server_select++;
+					right_btn = false;
+				}
 			}
-			else if(server_layout == 2){
-				
+			if(screen_flag == 1 && server_select == 1){
+				if(ok_btn){
+					if(server_dataN < 255)
+						server_dataN++;
+				}
 			}
-			
 		}
 	}
 	else if(sw_flag == 1){  // sw_flag 1 == when pressing
 		if(btn_flag == false){ // when button is released
 			sw_flag++;
-			pull_btn_time++;
+			if(pull_btn_time == 0)
+				pull_btn_time = 1;
 			btn_pressing = 0;
 		}
 		else{ //pressing
-			if(btn_pressing <= 65000)
-				btn_pressing++;
+			if(btn_pressing == 0)
+				btn_pressing = 1;
 		}
 	}
 	else if(sw_flag == 2 & btn_flag == true & pull_btn_time <= 10){	// sw_flag 2 == release the button
@@ -1299,218 +1328,467 @@ void SwitchFunction(void)
 	}
 	if(!left_btn & !right_btn & !ok_btn)
 		btn_flag = false;
-	if(sw_C_flag >= 3 && screen_status == LCD_MAINSCREEN){
+	if(btn_pressing >= 30 && screen_status == LCD_MAINSCREEN){
 		Set_StandbyMod();
 	}
 }
-void SD_Init()
-{	
-	if(!(HAL_GPIO_ReadPin(SD_SW_GPIO_Port,SD_SW_Pin)))
-	{
-		//SD카드 초기화
-		res = BSP_SD_Init();
-		if(res != FR_OK){
-				error_code=200;
-				Error_Handler();	
-		}
-
-		//SD 마운트
-		res = f_mount(&SDFatFs,"", 0);
-		if(res != FR_OK){
-				error_code=201;
-				Error_Handler();	
-		}
-	}
-	sd_cnt = !(HAL_GPIO_ReadPin(SD_SW_GPIO_Port,SD_SW_Pin));
-}
-
-void LCD_Init()
-{
-	ST7789_Init(&st7789_PFP);
-	
-	ST7789_DrawFilledRectangle2(&st7789_PFP, 0, 0, 240, 40, FLIP_RGB(WHITE));
-	
-	sprintf(lcd_str, "Loading...");
-	ST7789_WriteString2(0, 150, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	
-	HAL_TIM_PWM_Start(&htim9, TIM_CHANNEL_1);
-	for(int i=0; i<500; i=i+10){ TIM9->CCR1 = i;	HAL_Delay(1);}
-}
-void LCD_MAIN_Screen()
-{
-	if(ble_cnt == false)
-		ST7789_DrawImage_Flip(1, 1, 37, 37, (uint16_t *)IMG_37x37_BT_NC);
-	else
-		ST7789_DrawImage_Flip(1, 1, 37, 37, (uint16_t *)IMG_37x37_BT_CN);
-	
-	if(sd_cnt == false){
-		// sd card O
-		if(!(HAL_GPIO_ReadPin(SD_SW_GPIO_Port,SD_SW_Pin))){ 
-			HAL_Delay(1000);
-			SD_Init();
-		}
-		ST7789_DrawImage_Flip(40, 1, 37, 37, (uint16_t *)IMG_37x37_SD_UM);
-	}
-	else{
-		if((HAL_GPIO_ReadPin(SD_SW_GPIO_Port,SD_SW_Pin))){			
-			NVIC_SystemReset();
-		}
-		ST7789_DrawImage_Flip(40, 1, 37, 37, (uint16_t *)IMG_37x37_SD_MT);
-	}
-	
-	if(bat_cnt == false)
-		ST7789_DrawImage_Flip(210, 1, 24, 37, (uint16_t *)IMG_24x37_BAT_CAN);
-	else
-		ST7789_DrawImage_Flip(210, 1, 24, 37, (uint16_t *)IMG_24x37_BAT_CG);
-	
-	sprintf(lcd_str, "%3d%%", battery_value);
-	ST7789_WriteString2(140, 10, lcd_str, Font_16x26, FLIP_RGB(BLACK), FLIP_RGB(WHITE));
-	
-	sprintf(lcd_str, "<<");
-	if(left_btn == false)
-		ST7789_WriteString2(5, 214, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	else
-		ST7789_WriteString2(5, 214, lcd_str, Font_16x26, FLIP_RGB(RED), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "OK");
-	if(ok_btn == false)
-		ST7789_WriteString2(100, 214, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	else
-		ST7789_WriteString2(100, 214, lcd_str, Font_16x26, FLIP_RGB(RED), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, ">>");
-	if(right_btn == false)
-		ST7789_WriteString2(200, 214, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	else
-		ST7789_WriteString2(200, 214, lcd_str, Font_16x26, FLIP_RGB(RED), FLIP_RGB(BLACK));
-			
-	sprintf(lcd_str, "ACC : %6d", abs(I2C_BurstData[0])+abs(I2C_BurstData[1])+abs(I2C_BurstData[2]) );
-	ST7789_WriteString2(0, 180, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "GYRO : %6d", I2C_BurstData[3]+I2C_BurstData[4]+I2C_BurstData[5] );
-	ST7789_WriteString2(0, 150, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "PPG : %6d", max86171_data[0].led);
-	ST7789_WriteString2(0, 120, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "ECG : %6d", max30003_data[0].data);
-	ST7789_WriteString2(0, 90, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-		
-	bat_cnt = !HAL_GPIO_ReadPin(BAT_CG_POK_GPIO_Port,BAT_CG_POK_Pin);
-	
-}
-
-void LCD_MENU_Screen()
-{	
-	sprintf(lcd_str, "<<");
-	if(left_btn == false)
-		ST7789_WriteString2(5, 214, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	else
-		ST7789_WriteString2(5, 214, lcd_str, Font_16x26, FLIP_RGB(RED), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "OK");
-	if(ok_btn == false)
-		ST7789_WriteString2(100, 214, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	else
-		ST7789_WriteString2(100, 214, lcd_str, Font_16x26, FLIP_RGB(RED), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, ">>");
-	if(right_btn == false)
-		ST7789_WriteString2(200, 214, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	else
-		ST7789_WriteString2(200, 214, lcd_str, Font_16x26, FLIP_RGB(RED), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "View PPG signal");
-	ST7789_WriteString2(0, 60, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "View ECG signal");
-	ST7789_WriteString2(0, 90, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "AF test");
-	ST7789_WriteString2(0, 120, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "Save data");
-	ST7789_WriteString2(0, 150, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	
-	sprintf(lcd_str, "Send data");
-	ST7789_WriteString2(0, 180, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));	
-	
-	sprintf(lcd_str, "<<");
-	ST7789_WriteString2(200, menu_btn_count*30 +60, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	
-}
-
-void LCD_ECG_Screen(){
-	uint8_t ECG_Rescale = 40;
-	uint8_t middle_line = 180;
-	
-	if(line_x == 0 && base_line_y == 0){
-		int max = max30003_data[0].data;
-		for(int i=0;i<max30003_step;i++)
-			if(max < max30003_data[i].data)
-				max = max30003_data[i].data;
-		base_line_y = max;
-	}
-	
-	for(int i=0;i<max30003_step;i++)
-	{
-		line_y2 = middle_line+round((max30003_data[i].data - base_line_y)/ECG_Rescale);
-				
-		if(line_y2 < 40){
-			line_y2 = 40;
-			line_y1 = 40;
-		}
-		
-		ST7789_DrawLine(line_x,line_y1,line_x+1,line_y2,FLIP_RGB(BLUE));
-		HAL_Delay(1);
-		line_x++;
-		line_y1 = line_y2;
-		
-		if(line_x > 250){
-			LCD_Reset_Screen();
-			line_x = 0;
-			base_line_y = 0;
-			break;
-		}
-	}
-	max30003_step = 0;
-}
-void LCD_PPG_Screen(){	
-	// 1 -> 0 2 -> 6 3 -> 4 4 -> 2
-	int i = (10 - (2*max86171_data[0].tag))%8;
-	uint8_t PPG_Rescale = 20;
-
-	if(line_x == 0 && base_line_y == 0){ base_line_y = max86171_data[i+1].led;}
-	for(;i < max86171_step;i+=8){
-		line_y2 = 150+round((max86171_data[i+1].led - base_line_y)/PPG_Rescale);
-			
-		if(line_y1 > 240 || line_y2 > 240 || line_y1 < 40 || line_y2 < 40) { 
-			base_line_y = max86171_data[i+1].led; 
-			line_y1 = 150+round((max86171_data[i+1].led - base_line_y)/PPG_Rescale); 
-			line_y2 = 150+round((max86171_data[i+1].led - base_line_y)/PPG_Rescale);  
-		}
-		
-		ST7789_DrawLine(line_x,line_y1,line_x+1,line_y2,FLIP_RGB(BLUE));
-		HAL_Delay(1);
-		line_x++;
-		line_y1 = line_y2;
-		
-		if(line_x > 250)	{
-			LCD_Reset_Screen();
-			line_x = 0;
-			base_line_y = max86171_data[i+1].led;
-		}
-	}
-	max86171_step = 0;
-}
-
 void AF_Algorithm(){
+	if(sd_cnt){
+		if(af_select == 0 && screen_flag == 0){
+			if(max86171_step != 0)
+			{
+				uint8_t count_86171 =0;
+				int32_t max86171_input[3];
+				for(int i=0;i<max86171_step;i+=2)
+				{
+					if(max86171_data[i].tag == 1)
+					{
+						max86171_buffer[0] = max86171_data[i].data;
+						max86171_buffer[1] = max86171_data[i+1].data;
+					}
+					if(max86171_data[i].tag == 2)
+					{
+						max86171_buffer[2] = max86171_data[i].data;
+					}
+					if(max86171_data[i].tag == 3)
+					{
+						max86171_buffer[3] = max86171_data[i].data;
+						max86171_buffer[4] = max86171_data[i+1].data;
+					}
+					if(max86171_data[i].tag == 4)
+					{
+						max86171_buffer[5] = max86171_data[i].data;
+						count_86171++;
+					}
+					if(count_86171 == 1)
+					{
+						max86171_input[0] = max86171_buffer[0]-max86171_buffer[3];
+						max86171_input[1] = max86171_buffer[1]-max86171_buffer[4];
+						max86171_input[2] = max86171_buffer[2]-max86171_buffer[5];
+						
+						// data
+						float32_t data = (float32_t) (max86171_input[0]+max86171_input[1]+max86171_input[2])/3;
+								
+						newPpgDataFN[Filter_Idx] = data;				
+						if (Filter_Idx >= BLOCK_SIZE)
+							newPpgDataFN[Filter_Idx - BLOCK_SIZE] = data;				
+						
+						// filter		
+						++Filter_Idx;
+						if((time_flag2) > FILTERING_RATE && Filter_Idx >= BLOCK_SIZE){
+							float32_t filtered_ppgDataF[BLOCK_SIZE]={0,};
+							float32_t raw_ppgData[BLOCK_SIZE] = {0,};
+							time_flag2 = 1;
+							
+							for(int normalize = 0; normalize < BLOCK_SIZE ;normalize++){
+								raw_ppgData[normalize] = newPpgDataFN[Filter_Idx - BLOCK_SIZE + normalize] - newPpgDataFN[Filter_Idx - BLOCK_SIZE];
+							}
+							
+							arm_fir_f32(&S, raw_ppgData, filtered_ppgDataF, BLOCK_SIZE);
+						
+							// PEAK
+							AF_rri = AF_Peak_detection(filtered_ppgDataF,Peak_Interval);
+							
+							/* matching rri */
+							
+							// save first rri
+							if(PPI[0] == 0)
+								for(int j=0;j<AF_rri;j++)
+									PPI[j] = Peak_Interval[j];
+							
+							// matching rri idx									
+							uint8_t max_idx_count = 0;
+							uint8_t last_rri_idx = 0;			
+							float64_t AF_shannon=0, AF_sample=0, AF_rmssd=0; // save rmssd, sample entropy, shannon entropy						
+							
+							for(int j=RRI_COUNT-1;j>=0;j--){
+								uint8_t idx_count = 0;						
+								do {
+									if(Peak_Interval[0+idx_count] == PPI[j+idx_count]){
+										if(max_idx_count < idx_count){
+											max_idx_count = idx_count;
+											last_rri_idx = j;
+										}
+										idx_count++;
+									}
+									else
+										break;
+								}while(idx_count < AF_rri-1 && idx_count > 0 && j+idx_count < RRI_COUNT);
+							}
+							
+							//sort & check AF
+							int8_t sort_num = AF_rri+last_rri_idx-RRI_COUNT;
+							if(sort_num < 0){
+								for(int j=last_rri_idx;j<AF_rri+last_rri_idx;j++)
+									PPI[j] = Peak_Interval[j-last_rri_idx];
+							}
+							else{
+								for(int j=0;j<RRI_COUNT-AF_rri;j++)
+									PPI[j] = PPI[sort_num+j];
+								for(int j=RRI_COUNT-AF_rri;j<RRI_COUNT;j++)
+									PPI[j] = Peak_Interval[j-RRI_COUNT+AF_rri];
+
+								float32_t normalizePPI[16];
+								float32_t mean_Val;
+								
+								for(int norm_cpy = 0; norm_cpy<SAMPLE_N;norm_cpy++){
+									normalizePPI[norm_cpy] = (float32_t)PPI[norm_cpy]/(float32_t)SAMPLE_RATE;
+								}
+								arm_mean_f32(normalizePPI, SAMPLE_N, &mean_Val);
+								
+								AF_shannon = AF_Shannon_Entropy(normalizePPI);
+								AF_sample = AF_Sample_Entropy(normalizePPI,mean_Val);
+								AF_rmssd = AF_Normlaized_RMSSD(normalizePPI,mean_Val);
+								
+								// LCD
+								if(AF_shannon > 0.6 && AF_sample > 1.5 && AF_rmssd > 0.2){
+									reset_screen(screen_status);
+									screen_flag++;								
+									MAX86171_adjust_clock(1,128);
+									ECG_PPG_IMU_reset();
+									time_flag2 = 0;
+								}
+							}
+							int16_t IMU_data = 0;
+							LSM6DS_GetGyroDataX(I2C_Polling_data);
+							IMU_data += abs(I2C_Polling_data[0]);
+							LSM6DS_GetGyroDataY(I2C_Polling_data);
+							IMU_data += abs(I2C_Polling_data[0]);
+							LSM6DS_GetGyroDataZ(I2C_Polling_data);
+							IMU_data += abs(I2C_Polling_data[0]);
+							
+							showAFdata(AF_shannon, AF_sample, AF_rmssd, AF_rri, IMU_data);
+							
+						}
+						// primary swap
+						if (Filter_Idx >= BUFF_SIZE)
+							Filter_Idx = BLOCK_SIZE;			
+					}
+					
+				}
+				max86171_step = 0;
+			}
+		}
+		else if(af_select == 1 && screen_flag == 0){
+			if(max86171_step != 0)
+			{
+				int32_t max86171_input[3];
+				uint8_t count_86171 = 0;
+				for(int i=0;i<max86171_step;i+=2)
+				{
+					if(max86171_data[i].tag == 1)
+					{
+						max86171_buffer[0] = max86171_data[i].data;
+						max86171_buffer[1] = max86171_data[i+1].data;
+					}
+					if(max86171_data[i].tag == 2)
+					{
+						max86171_buffer[2] = max86171_data[i].data;
+					}
+					if(max86171_data[i].tag == 3)
+					{
+						max86171_buffer[3] = max86171_data[i].data;
+						max86171_buffer[4] = max86171_data[i+1].data;
+					}
+					if(max86171_data[i].tag == 4)
+					{
+						max86171_buffer[5] = max86171_data[i].data;
+						count_86171++;
+					}
+					if(count_86171 == 1)
+					{
+						count_86171 = 0;
+						max86171_input[0] = max86171_buffer[0]-max86171_buffer[3];
+						max86171_input[1] = max86171_buffer[1]-max86171_buffer[4];
+						max86171_input[2] = max86171_buffer[2]-max86171_buffer[5];
+						
+						// data
+						float32_t data = (float32_t) (max86171_input[0]+max86171_input[1]+max86171_input[2])/3;
+								
+						newPpgDataFN[Filter_Idx] = data;
+						if (Filter_Idx >= BLOCK_SIZE_FFT)
+							newPpgDataFN[Filter_Idx - BLOCK_SIZE_FFT] = data;				
+						
+						// filter		
+						++Filter_Idx;
+						if(time_flag2 > FILTERING_RATE && Filter_Idx >= BLOCK_SIZE_FFT && iterator_IMU >= BLOCK_SIZE_FFT){
+							time_flag2 = 1;
+							float32_t filtered_ppgDataF[BLOCK_SIZE_FFT]={0,};
+							float32_t filtered_gyroDataF[BLOCK_SIZE_FFT]={0,};
+							float32_t filtered_accDataF[BLOCK_SIZE_FFT]={0,};
+							float32_t fft_ppgDataF[USING_FFT]={0,};
+//							float32_t fft_accDataF[USING_FFT]={0,};
+							float32_t fft_gyroDataF[USING_FFT]={0,};
+							
+							//fir
+							{
+								float32_t raw_ppgData[BLOCK_SIZE_FFT] = {0,};
+								float32_t raw_accData[BLOCK_SIZE_FFT] = {0,};
+								float32_t raw_gyroData[BLOCK_SIZE_FFT] = {0,};
+								
+								for(int normalize = 0; normalize < BLOCK_SIZE_FFT ;normalize++){
+									raw_ppgData[normalize] = newPpgDataFN[Filter_Idx - BLOCK_SIZE_FFT + normalize] - newPpgDataFN[Filter_Idx - BLOCK_SIZE_FFT];
+									raw_gyroData[normalize] = bufferGYRO[iterator_IMU - BLOCK_SIZE_FFT + normalize] - bufferGYRO[iterator_IMU - BLOCK_SIZE_FFT];
+									raw_accData[normalize] = bufferACC[iterator_IMU - BLOCK_SIZE_FFT + normalize] - bufferACC[iterator_IMU - BLOCK_SIZE_FFT];
+								}
+								
+								arm_fir_f32(&S, raw_ppgData, filtered_ppgDataF, BLOCK_SIZE_FFT);
+								arm_fir_f32(&S, raw_gyroData, filtered_gyroDataF, BLOCK_SIZE_FFT);
+								arm_fir_f32(&S, raw_accData, filtered_accDataF, BLOCK_SIZE_FFT);								
+							}
+							
+														
+							// ppg complex input & fft							
+							for(int zzz = 0; zzz<BLOCK_SIZE_FFT - 50;zzz+=2){
+								fft_inputDataF[zzz] = filtered_ppgDataF[(zzz/2) + 50];
+								fft_inputDataF[zzz+1] = 0;
+							}
+							arm_cfft_f32(&arm_cfft_sR_f32_len2048, fft_inputDataF, 0, 1);
+							arm_cmplx_mag_f32(fft_inputDataF, fft_outputDataF, NFFT);
+							memset(fft_inputDataF,0,sizeof(float32_t) * NFFT*2);
+							memcpy(fft_ppgDataF,&fft_outputDataF[49],sizeof(float32_t)*USING_FFT);
+														
+							// ppg normalize
+							float32_t min_Val, max_Val;
+							arm_min_f32(fft_ppgDataF, USING_FFT, &min_Val, 0);
+							arm_offset_f32(fft_ppgDataF, -min_Val, fft_ppgDataF, USING_FFT);
+							arm_max_f32(fft_ppgDataF, USING_FFT, &max_Val, 0);
+							arm_scale_f32(fft_ppgDataF, 1/max_Val, fft_ppgDataF, USING_FFT);
+							
+							// gyro complex input & fft
+							for(int zzz = 0; zzz<BLOCK_SIZE_FFT - 50;zzz+=2){
+								fft_inputDataF[zzz] = filtered_gyroDataF[(zzz/2) + 50];
+								fft_inputDataF[zzz+1] = 0;
+							}							
+							arm_cfft_f32(&arm_cfft_sR_f32_len2048, fft_inputDataF, 0, 1);
+							arm_cmplx_mag_f32(fft_inputDataF, fft_outputDataF, NFFT);
+							memset(fft_inputDataF,0,sizeof(float32_t) * NFFT*2);
+							memcpy(fft_gyroDataF,&fft_outputDataF[49],sizeof(float32_t)*222);
+							
+							// gyro normalize
+							arm_min_f32(fft_gyroDataF, USING_FFT, &min_Val, 0);
+							arm_offset_f32(fft_gyroDataF, -min_Val, fft_gyroDataF, USING_FFT);
+							arm_max_f32(fft_gyroDataF, USING_FFT, &max_Val, 0);
+							arm_scale_f32(fft_gyroDataF, 1/max_Val, fft_gyroDataF, USING_FFT);
+							
+							// motion artifact
+							float32_t mean_gyro;
+							arm_mean_f32(fft_gyroDataF, USING_FFT, &mean_gyro);
+							
+							if(mean_gyro < 0.3){
+								// ppg - gyro
+								arm_sub_f32(fft_ppgDataF,fft_gyroDataF,fft_ppgDataF,USING_FFT);
+								
+								//log scale
+								arm_mult_f32(fft_ppgDataF,(float32_t *)log_curve,fft_ppgDataF,USING_FFT);
+							}
+							
+							//gaussian
+							if(PPI_idx != 0){
+								int32_t bpm_to_num = PPI[PPI_idx-1];
+								float adaptive_gaussian_array[222];
+								
+								bpm_to_num = ((bpm_to_num*1024)/(60*12.5))-49;
+								if(bpm_to_num<0){bpm_to_num=0;}
+								
+								memcpy(adaptive_gaussian_array, gaussian_dis2+250-bpm_to_num, sizeof(float32_t)*USING_FFT);
+								arm_mult_f32(fft_ppgDataF,adaptive_gaussian_array,fft_ppgDataF,USING_FFT);
+							}
+								
+							uint32_t max_Index;
+							float32_t normalizePPI[16];
+							arm_max_f32(fft_ppgDataF, USING_FFT, &max_Val, &max_Index);
+							
+							PPI[PPI_idx] = (max_Index+49)*(12.5/1024)*60;
+							float64_t AF_shannon=0, AF_sample=0, AF_rmssd=0;
+								
+							if(PPI_idx < 16)
+								PPI_idx++;
+							else {
+								for(int idx_sort = 0;idx_sort < 16;idx_sort++){
+									PPI[idx_sort] = PPI[idx_sort+1];
+									normalizePPI[idx_sort] = (float32_t)PPI[idx_sort+1]/(float32_t)60;
+								}
+								float32_t mean_Val;
+								PPI[16] = 0;								
+								arm_mean_f32(normalizePPI, SAMPLE_N, &mean_Val);
+								
+								AF_shannon = AF_Shannon_Entropy(normalizePPI);
+								AF_sample = AF_Sample_Entropy(normalizePPI,mean_Val);
+								AF_rmssd = AF_Normlaized_RMSSD(normalizePPI,mean_Val);
+								
+								// next
+								if(AF_shannon > 0.7 && AF_sample > 0.5 && AF_rmssd > 0.06){
+									reset_screen(screen_status);
+									screen_flag++;									
+									MAX86171_adjust_clock(1,128);
+									ECG_PPG_IMU_reset();
+									time_flag2 = 0;
+								}
+							}
+							
+							if(file_init){
+								fifo_ppg(PPI[0]);
+							}
+							
+							// LCD
+							showAFdata(AF_shannon, AF_sample, AF_rmssd, 0,0);
+							
+							// FSM
+							
+						}
+					// primary swap
+						if (Filter_Idx >= BUFF_SIZE_FFT)
+							Filter_Idx = BLOCK_SIZE_FFT;			
+					}
+					
+				}
+				max86171_step = 0;
+			}
+		}
+		else {
+			if(screen_flag == 1){ // ecg touch check
+				if(max30003_step != 0)
+				{
+					for(int i=0;i<max30003_step;i++)
+					{
+						if(abs(max30003_data[i].data) > 10000){
+							if(sd_cnt){
+								if(FIFO_Init_W()){
+									error_code = 202;
+									Error_Handler();
+								}
+								file_init = true;
+							}
+							reset_screen(screen_status);
+							screen_flag++;
+							time_flag2 = 1;
+							spk_switch = 0;
+							break;
+						}
+					}
+					max30003_step = 0;
+				}
+			}
+			else if(screen_flag == 2){ // data stabilization
+				max30003_step = 0;
+				if(time_flag2 >= 50){
+					reset_screen(screen_status);
+					ECG_PPG_IMU_reset();
+					time_flag2 = 1;
+					screen_flag++;
+				}
+			}
+			else if(screen_flag == 3){ // 30s data fifo
+				if(file_init)
+					data_fifo();
+				if(time_flag2 >= 300){
+					reset_screen(screen_status);
+					if(file_init){
+						if(FIFO_Close()){
+							error_code = 202;
+							Error_Handler();							
+						}
+						file_init = false;	
+					}
+					screen_flag++;
+				}
+			}	
+			else if(screen_flag == 4){ // stfp check
+				if(strncmp(Rx_read_data,"SCS",3) == 0){
+					reset_screen(screen_status);
+					BT_rx_flag = 0;
+					screen_flag++;
+				}
+			}
+			else if(screen_flag == 5){ // send data
+				Directory_check();
+				Data_Send();
+				reset_screen(screen_status);
+				screen_flag++;
+			}
+			else if(screen_flag == 6){ // finish
+				if(Directory_check()){
+					error_code = 205;
+					Error_Handler();
+				}
+			}			
+		}
+	}
+	else {
+		sd_cnt = sd_init();
+		if(sd_cnt){
+			reset_screen(screen_status);
+			time_flag2=1;
+			ECG_PPG_IMU_reset();
+		}
+	}
+}
+void save_algorithm(){
+	if(time_flag2 >= 600) { // 1 min data save
+		time_flag2=1;					
+		if(FIFO_Close()){
+			error_code = 202;
+			Error_Handler();							
+		}
+		file_init = false;		
+		if(sd_cnt){
+			if(FIFO_Init_W()){
+				error_code = 202;
+				Error_Handler();
+			}
+			file_init = true;
+		}
+	}
 	
-	// acc check
-		
-	
-	// PPG filtering
-	if(max86171_step != 0 && AF_layout == 0)
+	if(file_init)
+		data_fifo();
+	else{ // wait sd connection
+		sd_cnt = sd_init();
+		if(sd_cnt){
+			if(FIFO_Init_W()){
+				error_code = 202;
+				Error_Handler();
+			}
+			file_init = true;
+			reset_screen(screen_status);
+			time_flag2++;
+			ECG_PPG_IMU_reset();
+		}
+	}
+}
+
+void server_algorithm(){
+	if(sd_cnt){ //wait ble connection
+		if(screen_flag == 1){			
+			dot_screen_moving("looking for BLE",time_flag2);			
+			if(strncmp(Rx_read_data,"SCS",3) == 0){
+				BT_rx_flag = 0;
+				reset_screen(screen_status);
+				screen_flag++;
+				time_flag2 = 0;
+			}
+		}
+		else if(screen_flag == 2){			
+			if(Directory_check()){
+				error_code = 205;
+				Error_Handler();
+			}
+			Data_Send();
+			screen_flag++;
+			reset_screen(screen_status);
+		}
+	}
+	else{ //wait sd connection
+		sd_cnt = sd_init();
+		if(sd_cnt){
+			reset_screen(screen_status);
+		}
+	}
+}
+
+void data_fifo(){
+	if(max86171_step != 0) // ppg fifo
 	{
 		uint8_t count_86171 =0;
 		int32_t max86171_input[3];
@@ -1518,21 +1796,21 @@ void AF_Algorithm(){
 		{
 			if(max86171_data[i].tag == 1)
 			{
-				max86171_buffer[0] = max86171_data[i].led;
-				max86171_buffer[1] = max86171_data[i+1].led;
+				max86171_buffer[0] = max86171_data[i].data;
+				max86171_buffer[1] = max86171_data[i+1].data;
 			}
 			if(max86171_data[i].tag == 2)
 			{
-				max86171_buffer[2] = max86171_data[i].led;
+				max86171_buffer[2] = max86171_data[i].data;
 			}
 			if(max86171_data[i].tag == 3)
 			{
-				max86171_buffer[3] = max86171_data[i].led;
-				max86171_buffer[4] = max86171_data[i+1].led;
+				max86171_buffer[3] = max86171_data[i].data;
+				max86171_buffer[4] = max86171_data[i+1].data;
 			}
 			if(max86171_data[i].tag == 4)
 			{
-				max86171_buffer[5] = max86171_data[i].led;
+				max86171_buffer[5] = max86171_data[i].data;
 				count_86171++;
 			}
 			if(count_86171 == 1)
@@ -1541,739 +1819,106 @@ void AF_Algorithm(){
 				max86171_input[1] = max86171_buffer[1]-max86171_buffer[4];
 				max86171_input[2] = max86171_buffer[2]-max86171_buffer[5];
 				
-				// data
-				float32_t data = (float32_t) (max86171_input[0]+max86171_input[1]+max86171_input[2])/3;
-							
-				//FIFO raw
-//				if(sd_cnt){
-//					sprintf(SD_msg,"%f, %d\n",data);
-//					f_puts(SD_msg,&PPG_fp);
-//					memset(SD_msg,0,sizeof(SD_msg));
-//				}				
-				
-				//flag reset
-				if(time_flag2 >= 1000)
-					time_flag2=0;
-				
-				newPpgDataFN[Filter_Idx] = data;				
-				if (Filter_Idx >= BLOCK_SIZE)
-					newPpgDataFN[Filter_Idx - BLOCK_SIZE] = data;				
-				
-				// filter		
-				++Filter_Idx;
-				if(++fir_threshold >= FILTERING_RATE && Filter_Idx >= BLOCK_SIZE){
-					float32_t filtered_ppgDataF[BLOCK_SIZE]={0,};
-					float32_t raw_ppgData[BLOCK_SIZE] = {0,};
-					
-					for(int normalize = 0; normalize < BLOCK_SIZE ;normalize++){
-						raw_ppgData[normalize] = newPpgDataFN[Filter_Idx - BLOCK_SIZE + normalize] - newPpgDataFN[Filter_Idx - BLOCK_SIZE];
-					}
-					
-					arm_fir_f32(&S, raw_ppgData, filtered_ppgDataF, BLOCK_SIZE);
-					fir_threshold = 0;
-					
-					// save last 2 sec (screen)
-					for(int j = 0;j<FILTERING_RATE;j++)
-						fir_LCD_data[j] = filtered_ppgDataF[BLOCK_SIZE-FILTERING_RATE+j];
-										
-					// PEAK
-					AF_rri = AF_Peak_detection(filtered_ppgDataF,Peak_Interval);
-					
-					/* matching rri */
-					
-					// save first rri
-					if(PPI[0] == 0)
-						for(int j=0;j<AF_rri;j++)
-							PPI[j] = Peak_Interval[j];
-					
-					// matching rri idx									
-					uint8_t max_idx_count = 0;
-					uint8_t last_rri_idx = 0;					
-					
-					for(int j=RRI_COUNT-1;j>=0;j--){
-						uint8_t idx_count = 0;						
-						do {
-							if(Peak_Interval[0+idx_count] == PPI[j+idx_count]){
-								if(max_idx_count < idx_count){
-									max_idx_count = idx_count;
-									last_rri_idx = j;
-								}
-								idx_count++;
-							}
-							else
-								break;
-						}while(idx_count < AF_rri-1 && idx_count > 0 && j+idx_count < RRI_COUNT);
-					}
-					
-					//sort & check AF
-					int8_t sort_num = AF_rri+last_rri_idx-RRI_COUNT;
-					if(sort_num < 0){
-						for(int j=last_rri_idx;j<AF_rri+last_rri_idx;j++)
-							PPI[j] = Peak_Interval[j-last_rri_idx];
-					}
-					else{
-						for(int j=0;j<RRI_COUNT-AF_rri;j++)
-							PPI[j] = PPI[sort_num+j];
-						for(int j=RRI_COUNT-AF_rri;j<RRI_COUNT;j++)
-							PPI[j] = Peak_Interval[j-RRI_COUNT+AF_rri];
-						
-						AF_shannon = AF_Shannon_Entropy(PPI);
-						AF_sample = AF_Sample_Entropy(PPI);
-						AF_rmssd = AF_Normlaized_RMSSD(PPI);
-					}
-					// LCD
-					AF_Show_Data();
-					
-				}
-			// primary swap
-				if (Filter_Idx >= BUFF_SIZE)
-					Filter_Idx = BLOCK_SIZE;			
+//				int32_t ppg = max86171_input[0] + max86171_input[1] + max86171_input[2];
+				fifo_ppg2(max86171_input);
 			}
-			
 		}
 		max86171_step = 0;
 	}
-	
-	if( AF_layout == 1){
-		if(screen_flag == 1){
-			if(max30003_step != 0)
-			{
-				for(int i=0;i<max30003_step;i++)
-				{
-					if(abs(max30003_data[i].data) > 10000){
-						LCD_Reset_Screen();
-						sprintf(lcd_str, "data saving...");
-						ST7789_WriteString2(0, 150, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-						HAL_Delay(1);
-						screen_flag = 2;
-						time_flag2 = 1;
-						spk_switch = 0;
-						break;
-					}
-				}
-				max30003_step = 0;
-			}
-		}
-		if(screen_flag == 2){
-			max30003_step = 0;
-			if(time_flag2 >= 50){	
-				LCD_Reset_Screen();
-				ECG_PPG_IMU_reset();
-				time_flag2 = 1;
-				screen_flag = 3;
-				sprintf(lcd_str, "wait 30 sec");
-				ST7789_WriteString2(0, 180, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-				HAL_Delay(1);
-			}		
-		}
-		else if(screen_flag == 3){
-			DATA_FIFO();
-			if(time_flag2 >= 300){
-				AF_layout = 2;
-				LCD_Reset_Screen();
-				if(file_init)
-					FIFO_Close();
-			}
-		}
-	}
-	else if(AF_layout == 2){
-		if(strncmp(Rx_read_data,"SCS",3) == 0){
-			BT_rx_flag = 0;
-			AF_layout = 3;
-		}
-	}
-	else if(AF_layout == 3){
-		Data_Send();
-		AF_layout = 4;
-	}
-	else if(AF_layout == 4){
-		Directory_check();
-	}
-}
-
-void LCD_AF_Screen(){
-	/* View PPG FIR */
-	/*
-	float AF_Rescale = (float)(max_line_y-min_line_y)/(float)100;
-	if(line_x == 0)
-		AF_Layer_rescale(&AF_Rescale);
-	
-	for (int i = 0; i < FILTERING_RATE; i++){
-		line_y1 = line_y2;
-		line_y2 = 180 - ((fir_LCD_data[i] - base_line_y)/AF_Rescale);
-		if(line_y2 < 40 || line_y2 > 200)
-			AF_Layer_rescale(&AF_Rescale);
-		
-		ST7789_DrawLine(line_x,line_y1,line_x+1,line_y2,FLIP_RGB(BLUE));			
-		line_x++;
-		if(line_x > 250){			
-			line_x = 0;
-			LCD_Reset_Screen();
-			AF_Show_Data();
-		}
-	}
-	*/
-	if(sd_cnt){
-		if(AF_layout == 0) {
-			dot_screen_moving("AF detecting");
-			HAL_Delay(1);
-		}
-		if(AF_layout == 1){
-			if(screen_flag == 0){
-				LCD_Reset_Screen();
-				spk_switch = 1;
-				sprintf(lcd_str, "  AF detected  ");
-				ST7789_WriteString2(0, 120, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-				HAL_Delay(1);
-				
-				sprintf(lcd_str, "put your finger");
-				ST7789_WriteString2(0, 150, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-				HAL_Delay(1);
-				
-				sprintf(lcd_str, " on the metal ");
-				ST7789_WriteString2(0, 180, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-				HAL_Delay(1);
-				
-				screen_flag++;
-			}
-			else if(screen_flag == 2){		
-				sprintf(lcd_str, "Wait Data");
-				ST7789_WriteString2(0, 120, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-				HAL_Delay(1);
-				sprintf(lcd_str, "stabilization");
-				ST7789_WriteString2(0, 150, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-				HAL_Delay(1);
-			}
-			else if(screen_flag == 3){
-				if((time_flag2%10) == 0){
-					sprintf(lcd_str, "time : %d",(time_flag2/10));
-					ST7789_WriteString2(0, 120, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-					HAL_Delay(1);
-				}
-			}
-		}
-		if(AF_layout == 2){
-			sprintf(lcd_str, "Fin AF detect");
-			ST7789_WriteString2(0, 120, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			HAL_Delay(1);
-			sprintf(lcd_str, "Wait BLE cnt");
-			ST7789_WriteString2(0, 150, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			HAL_Delay(1);
-		}
-		if(AF_layout == 3){
-			LCD_Reset_Screen();
-			sprintf(lcd_str, "Sending data  ");
-			ST7789_WriteString2(0, 120, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			HAL_Delay(1);
-		}
-		if(AF_layout == 4){
-			sprintf(lcd_str, "Sending fin  ");
-			ST7789_WriteString2(0, 120, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			HAL_Delay(1);
-		}
-	}
-	else {
-		if(screen_flag == 0){
-			LCD_Reset_Screen();
-			sprintf(lcd_str, "Insert SD card");
-			ST7789_WriteString2(10, 50, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			screen_flag++;
-		}
-		else{
-			if(!(HAL_GPIO_ReadPin(SD_SW_GPIO_Port,SD_SW_Pin))){
-				HAL_Delay(1000);
-				SD_Init();
-				FIFO_Init_W();
-				LCD_Reset_Screen();
-				screen_flag = 0;
-				time_flag2=1;
-				ECG_PPG_IMU_reset();
-			}
-		}
-	}
-	
-}
-void AF_Layer_rescale(float *AF_Rescale){
-	LCD_Reset_Screen();
-	AF_Show_Data();
-	line_x = 0;
-	max_line_y = fir_LCD_data[0];
-	min_line_y = fir_LCD_data[0];
-	for(int i =0;i<FILTERING_RATE;i++){
-		if(fir_LCD_data[i] > max_line_y)
-			max_line_y = fir_LCD_data[i];
-		if(fir_LCD_data[i] < min_line_y)
-			min_line_y = fir_LCD_data[i];
-	}
-	*AF_Rescale = (float)(max_line_y-min_line_y)/(float)100;
-	line_y2 = 180;
-	base_line_y = min_line_y;
-}
-void AF_Show_Data(){	
-//	sprintf(lcd_str, "%d %d %d %d %d %d %d",PPI[9],PPI[10],PPI[11],PPI[12],PPI[13],PPI[14],PPI[15]);
-//	ST7789_WriteString2(0, 180, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-//	HAL_Delay(1);
-	sprintf(lcd_str, "shaE smpE RMSSD rri");
-	ST7789_WriteString2(0, 200, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-	HAL_Delay(1);
-	
-	if(AF_shannon > 0.6 && AF_sample > 1.5 && AF_rmssd > 0.25){
-		LCD_Reset_Screen();		
-		AF_layout = 1;
-		time_flag2 = 0;
-	}
-	else{
-		sprintf(lcd_str, "%1.02f %1.02f %1.02f   %d",  AF_shannon, AF_sample, AF_rmssd,AF_rri);
-		ST7789_WriteString2(0, 220, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-		HAL_Delay(1);
-	}
-	
-	acc_warning();
-}
-
-void LCD_SAVE_Screen(){	
-	if(sd_cnt){
-		// SD out
-		if((HAL_GPIO_ReadPin(SD_SW_GPIO_Port,SD_SW_Pin))){ NVIC_SystemReset();}
-				
-		//LCD Reset
-		if(time_flag2 >= 600) {
-			time_flag2=1;
-			FIFO_Close();
-			FIFO_Init_W();
-		}
-		
-		if(file_init){		
-			sprintf(lcd_str, "Save time : %2ds", (time_flag2/10));
-			ST7789_WriteString2(0, 200, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			
-			sprintf(lcd_str, "IMU : %6d", I2C_Stat[0] );
-			ST7789_WriteString2(0, 160, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			
-			sprintf(lcd_str, "PPG : %6d", max86171_data[0].led);
-			ST7789_WriteString2(0, 130, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			
-			sprintf(lcd_str, "ECG : %6d", max30003_data[0].data);
-			ST7789_WriteString2(0, 100, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			
-			sprintf(lcd_str, "save data");
-			ST7789_WriteString2(10, 50, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-		} else {
-			sprintf(lcd_str, "Press ok button");
-			ST7789_WriteString2(40, 120, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-		}
-		
-	}else {
-		sprintf(lcd_str, "Insert SD card");
-		ST7789_WriteString2(10, 50, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));		
-		if(!(HAL_GPIO_ReadPin(SD_SW_GPIO_Port,SD_SW_Pin))){
-			HAL_Delay(1000);
-			SD_Init();
-			FIFO_Init_W();
-			LCD_Reset_Screen();
-			time_flag2++;
-			ECG_PPG_IMU_reset();
-		}
-	}
-}
-void LCD_SERVER_Screen(){
-	if(sd_cnt){
-		if(server_layout == 0){			
-			sprintf(lcd_str, "Send last 1 data");
-			ST7789_WriteString2(0, 60, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			
-			sprintf(lcd_str, "Send last 2 data");
-			ST7789_WriteString2(0, 120, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			
-			sprintf(lcd_str, "Send whole data");
-			ST7789_WriteString2(0, 180, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));	
-			
-			sprintf(lcd_str, "<<");
-			ST7789_WriteString2(200, server_btn_count*60 +60, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-		}
-		else if(server_layout == 1){
-			switch(server_btn_count){
-				case 0 : 
-					sprintf(lcd_str, "Send last 1 data");
-					break;
-				case 1 : 
-					sprintf(lcd_str, "Send last 2 data");
-					break;
-				case 2 : 
-					sprintf(lcd_str, "Send whole data");
-					break;
-				default : 
-					sprintf(lcd_str, "Error???");
-					break;
-			}
-			ST7789_WriteString2(30, 60, lcd_str, Font_11x18 , FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			HAL_Delay(1);
-						
-			dot_screen_moving("looking for BLE");
-			
-			if(strncmp(Rx_read_data,"SCS",3) == 0){
-				BT_rx_flag = 0;
-				server_layout = 2;
-				LCD_Reset_Screen();
-				sprintf(lcd_str, "Connected");
-				ST7789_WriteString2(0, 120, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-				HAL_Delay(1);
-				sprintf(lcd_str, "Send Data...");
-				ST7789_WriteString2(0, 180, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-				HAL_Delay(1);
-			}
-		}
-		else if(server_layout == 2){
-			Directory_check();
-			Data_Send();
-			server_layout = 3;
-		}
-		else if(server_layout == 3){
-			LCD_Reset_Screen();
-			sprintf(lcd_str, "Finished");
-			ST7789_WriteString2(0, 120, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			HAL_Delay(1);
-			server_layout = 4;
-		}
-	}
-	else {
-		sprintf(lcd_str, "Insert SD card");
-		ST7789_WriteString2(10, 50, lcd_str, Font_16x26, FLIP_RGB(WHITE), FLIP_RGB(BLACK));		
-		if(!(HAL_GPIO_ReadPin(SD_SW_GPIO_Port,SD_SW_Pin))){
-			HAL_Delay(1000);
-			SD_Init();
-			LCD_Reset_Screen();
-			server_layout = 0;
-		}
-	}
-}
-void LCD_Reset_Screen(){
-	ST7789_DrawFilledRectangle2(&st7789_PFP, 0, 0, 240, 240, FLIP_RGB(BLACK));
-	ST7789_DrawFilledRectangle2(&st7789_PFP, 0, 0, 240, 40, FLIP_RGB(WHITE));
-	battery_value=MAX17262_Get_BatPercent();
-	
-	if(screen_status == LCD_MENUSCREEN){
-		sprintf(lcd_str, "Select action");
-		ST7789_WriteString2(10, 7, lcd_str, Font_16x26, FLIP_RGB(BLACK), FLIP_RGB(WHITE));
-	}
-	if(screen_status == LCD_PPGSCREEN){
-		sprintf(lcd_str, "PPG Signal");
-		ST7789_WriteString2(10, 7, lcd_str, Font_16x26, FLIP_RGB(BLACK), FLIP_RGB(WHITE));
-	}
-	if(screen_status == LCD_ECGSCREEN){
-		sprintf(lcd_str, "ECG Signal");
-		ST7789_WriteString2(10, 7, lcd_str, Font_16x26, FLIP_RGB(BLACK), FLIP_RGB(WHITE));
-	}
-	if(screen_status == LCD_AFSCREEN){
-		sprintf(lcd_str, "AF Detect");
-		ST7789_WriteString2(10, 7, lcd_str, Font_16x26, FLIP_RGB(BLACK), FLIP_RGB(WHITE));
-	}
-	if(screen_status == LCD_SAVESCREEN){
-		sprintf(lcd_str, "SAVE Signal");
-		ST7789_WriteString2(10, 7, lcd_str, Font_16x26, FLIP_RGB(BLACK), FLIP_RGB(WHITE));
-	}
-	if(screen_status == LCD_SERVERSCREEN){
-		sprintf(lcd_str, "Send to Server");
-		ST7789_WriteString2(10, 7, lcd_str, Font_16x26, FLIP_RGB(BLACK), FLIP_RGB(WHITE));
-	}
-}
-
-void DATA_FIFO(){
-	if(sd_cnt == true){
-		if(max86171_step != 0)
+	if(max30003_step != 0) // ecg fifo
+	{
+		for(int i=0;i<max30003_step;i++)
 		{
-			uint8_t count_86171 =0;
-			int32_t max86171_input[3];
-			for(int i=0;i<max86171_step;i+=2)
-			{
-				if(max86171_data[i].tag == 1)
-				{
-					max86171_buffer[0] = max86171_data[i].led;
-					max86171_buffer[1] = max86171_data[i+1].led;
-				}
-				if(max86171_data[i].tag == 2)
-				{
-					max86171_buffer[2] = max86171_data[i].led;
-				}
-				if(max86171_data[i].tag == 3)
-				{
-					max86171_buffer[3] = max86171_data[i].led;
-					max86171_buffer[4] = max86171_data[i+1].led;
-				}
-				if(max86171_data[i].tag == 4)
-				{
-					max86171_buffer[5] = max86171_data[i].led;
-					count_86171++;
-				}
-				if(count_86171 == 1)
-				{
-					max86171_input[0] = max86171_buffer[0]-max86171_buffer[3];
-					max86171_input[1] = max86171_buffer[1]-max86171_buffer[4];
-					max86171_input[2] = max86171_buffer[2]-max86171_buffer[5];
-					
-					sprintf(SD_msg,"%d,%d,%d\n",max86171_input[0],max86171_input[1],max86171_input[2]);
-					f_puts(SD_msg,&PPG_fp);
-					memset(SD_msg,0,sizeof(SD_msg));				
-				}
-			}
-			max86171_step = 0;
-		}		
-		if(max30003_step != 0)
-		{
-			for(int i=0;i<max30003_step;i++)
-			{
-				if(max30003_data[i].data > 0)
-					max30003_data[i].data = max30003_data[i].data*-1;
-				sprintf(SD_msg,"%d\n",max30003_data[i].data); //18bits int -> uint = 131072
-				f_puts(SD_msg,&ECG_fp);
-				memset(SD_msg,0,sizeof(SD_msg));
-			}
-			max30003_step = 0;
-		}
-		if(I2C_Stat[0] & 0x07ff){
-			for(int i=0;i<I2C_Stat[0]/6;i++){
-				sprintf(SD_msg,"%d,%d,%d,%d,%d,%d\n",I2C_BurstData[0+(i*6)],I2C_BurstData[1+(i*6)],I2C_BurstData[2+(i*6)],I2C_BurstData[3+(i*6)],I2C_BurstData[4+(i*6)],I2C_BurstData[5+(i*6)]);
-				f_puts(SD_msg,&IMU_fp);
-				memset(SD_msg,0,sizeof(SD_msg));
-			}
-		}
-		I2C_Stat[0] = 0;		
-	}
-}
-
-void FIFO_Init_W(){	
-	//f_open 파일 열기	
-	if(sd_cnt == true){
-		file_init = true;
-		if(file_count == 0)
-			Directory_check();
-		else
-			file_count++;
-		
-		sprintf(SD_msg,"/data/ECG_%d.csv",file_count);
-		res = f_open(&ECG_fp, SD_msg, FA_OPEN_ALWAYS | FA_WRITE );
-		if(res != FR_OK){
-			error_code=202;
-			Error_Handler();
-		}
-		memset(SD_msg,0,sizeof(SD_msg));
-		sprintf(SD_msg,"\n");
-		f_puts(SD_msg,&ECG_fp);
-		memset(SD_msg,0,sizeof(SD_msg));
-		
-		sprintf(SD_msg,"/data/PPG_%d.csv",file_count);
-		res = f_open(&PPG_fp, SD_msg, FA_OPEN_ALWAYS | FA_WRITE);
-		if(res != FR_OK){
-			error_code=202;
-			Error_Handler();
-		}
-		memset(SD_msg,0,sizeof(SD_msg));
-		sprintf(SD_msg,"\n");
-		f_puts(SD_msg,&PPG_fp);
-		memset(SD_msg,0,sizeof(SD_msg));
-		
-		sprintf(SD_msg,"/data/IMU_%d.csv",file_count);
-		res = f_open(&IMU_fp, SD_msg, FA_OPEN_ALWAYS | FA_WRITE);
-		if(res != FR_OK){
-			error_code=202;
-			Error_Handler();
-		}
-		memset(SD_msg,0,sizeof(SD_msg));
-		sprintf(SD_msg,"\n");
-		f_puts(SD_msg,&IMU_fp);
-		memset(SD_msg,0,sizeof(SD_msg));
-	}
-}
-
-void FIFO_Init_R(uint8_t file_number){
-	//f_open 파일 열기	
-	if(sd_cnt){
-		file_init = true;
-		
-		if(screen_status == LCD_SERVERSCREEN){
-			sprintf(SD_msg,"/OLD%d/ECG_%d.csv",folder_count,file_number);
-			res = f_open(&ECG_fp, SD_msg, FA_OPEN_ALWAYS | FA_READ );
-			if(res != FR_OK){
-				error_code=202;
-				Error_Handler();
-			}
-			memset(SD_msg,0,sizeof(SD_msg));
+			fifo_ecg(max30003_data[i].data);
 			
-			sprintf(SD_msg,"/OLD%d/PPG_%d.csv",folder_count,file_number);
-			res = f_open(&PPG_fp, SD_msg, FA_OPEN_ALWAYS | FA_READ );
-			if(res != FR_OK){
-				error_code=202;
-				Error_Handler();
-			}
-			memset(SD_msg,0,sizeof(SD_msg));
-			
-			sprintf(SD_msg,"/OLD%d/IMU_%d.csv",folder_count,file_number);
-			res = f_open(&IMU_fp, SD_msg, FA_OPEN_ALWAYS | FA_READ );
-			if(res != FR_OK){
-				error_code=202;
-				Error_Handler();
-			}
-			memset(SD_msg,0,sizeof(SD_msg));
 		}
-		else if(screen_status == LCD_AFSCREEN){
-			sprintf(SD_msg,"/data/ECG_1.csv");
-			res = f_open(&ECG_fp, SD_msg, FA_OPEN_ALWAYS | FA_READ );
-			if(res != FR_OK){
-				error_code=202;
-				Error_Handler();
-			}
-			memset(SD_msg,0,sizeof(SD_msg));
-		}
-		
-	}
+		max30003_step = 0;
+	}	
+	int16_t tmp_iterator_IMU = iterator_IMU;
+	if(tmp_iterator_IMU >= BLOCK_SIZE_FFT)
+		tmp_iterator_IMU = iterator_IMU-BLOCK_SIZE_FFT;
 	
-}
-
-void FIFO_Close(){
-	file_init = false;
-	res = f_close(&ECG_fp);
-	if(res != FR_OK){ error_code=204; Error_Handler();}
-	if(screen_status != LCD_AFSCREEN){
-		res = f_close(&PPG_fp);
-		if(res != FR_OK){ error_code=204; Error_Handler();}
-		res = f_close(&IMU_fp);
-		if(res != FR_OK){ error_code=204; Error_Handler();}
+	if(iteratorFifoIMU != tmp_iterator_IMU){ // imu fifo circular queue
+		if(iteratorFifoIMU > tmp_iterator_IMU){
+			for(int i=iteratorFifoIMU;i<BLOCK_SIZE_FFT;i++){
+				int32_t imu[6] = {fifoGYRO[i][0],fifoGYRO[i][1],fifoGYRO[i][2],fifoACC[i][0],fifoACC[i][1],fifoACC[i][2]};
+				fifo_imu2(imu);
+			}
+			if(tmp_iterator_IMU != 0){
+				for(int i=0;i<tmp_iterator_IMU;i++){
+					int32_t imu[6] = {fifoGYRO[i][0],fifoGYRO[i][1],fifoGYRO[i][2],fifoACC[i][0],fifoACC[i][1],fifoACC[i][2]};
+					fifo_imu2(imu);
+				}
+			}
+		}
+		else {
+			for(int i=iteratorFifoIMU;i<tmp_iterator_IMU;i++){
+				int32_t imu[6] = {fifoGYRO[i][0],fifoGYRO[i][1],fifoGYRO[i][2],fifoACC[i][0],fifoACC[i][1],fifoACC[i][2]};
+				fifo_imu2(imu);
+			}
+		}
+		iteratorFifoIMU = tmp_iterator_IMU;
 	}
 }
 
-void Data_Update(){
+void Data_Update() {
 	if(screen_status == LCD_PPGSCREEN || screen_status == LCD_MAINSCREEN || screen_status == LCD_SAVESCREEN || screen_status == LCD_AFSCREEN){		
 		PPG_Update();
 	}
 		
-	if(screen_status == LCD_ECGSCREEN || screen_status == LCD_MAINSCREEN || screen_status == LCD_SAVESCREEN || AF_layout == 1){
+	if(screen_status == LCD_ECGSCREEN || screen_status == LCD_MAINSCREEN || screen_status == LCD_SAVESCREEN || screen_status == LCD_AFSCREEN){
 		ECG_Update();
 	}
 		
-	if(screen_status == LCD_MAINSCREEN || screen_status == LCD_SAVESCREEN || AF_layout == 1){
-		IMU_Update();
-	}
-	
+	if(screen_status == LCD_MAINSCREEN || screen_status == LCD_SAVESCREEN || screen_status == LCD_AFSCREEN){
+//		IMU_Update(); buffer -> polling (for stability)
+	}	
 }
 
-void Data_Send(void){
+void Data_Send(void) {
+	// send protocol O + the number of files
 	if(screen_status == LCD_AFSCREEN){
-		Folder_Read_Write(0);
+		printf("O0001");
+		
+		if(folder_WR(1, hiwdg)){
+			error_code = 202;
+			Error_Handler();
+		}
 	}
 	else if(screen_status == LCD_SERVERSCREEN){
-		if(server_btn_count == 0){
-			Folder_Read_Write(folder_count);
+		if(server_select == 0){
+			printf("O0001");
+			folder_WR(1, hiwdg);
 		}
-		if(server_btn_count == 1){
-			Folder_Read_Write(folder_count-1);
-			Folder_Read_Write(folder_count);
-		}
-		if(server_btn_count == 2){
-			for(uint8_t i=1;i<=folder_count;i++){
-				Folder_Read_Write(i);
-			}
-		}
-	}
-}
-void Folder_Read_Write(uint8_t folder_N){
-	char read_str[10];
-		
-	//open dir
-	if(screen_status == LCD_SERVERSCREEN){
-		sprintf(read_str,"/OLD%d",folder_N);
-		res = f_opendir(&dir,read_str);
-		if(res != FR_OK){
-			error_code=205;
-			Error_Handler();
-		}
-	}
-	else if(screen_status == LCD_AFSCREEN){
-		sprintf(read_str,"data");
-		res = f_opendir(&dir,read_str);
-		if(res != FR_OK){
-			error_code=205;
-			Error_Handler();
-		}
-	}
-	
-	//read dir
-	memset(&fno, 0, sizeof(FILINFO));
-	res = f_readdir(&dir, &fno);
-	if(res != FR_OK){
-		error_code = 205;
-		Error_Handler();
-	}
-	
-	if(fno.fattrib== AM_DIR || fno.fattrib== AM_ARC)// file or directory o
-	{
-		if(screen_status == LCD_SERVERSCREEN){
-			while(true){
-				f_findnext(&dir,&fno);
-				if(fno.fname[0] == NULL){
-					char *file_tmp = strtok(fno.fname+1,".");
-					char *file_ptr = strchr(file_tmp,'_')+1;
-					
-					// find the number of files
-					file_count = 0;
-					for(int16_t ii = strlen(file_ptr)-1;ii>=0;ii--){
-						file_count += (file_ptr[ii] - '0')*pow(10,strlen(file_ptr)-ii-1);
-					}				
-					
-					// read & send whole files
-					for(int16_t ii = 1;ii<=file_count;ii++){
-						FIFO_Init_R(ii);
-						uint8_t read_buf[50];
-						
-						printf("E");
-						while(f_gets(read_buf,sizeof(read_buf),&ECG_fp)){
-							HAL_IWDG_Refresh(&hiwdg);
-							printf("%s",read_buf);
-						}
-						printf("F");
-						
-						printf("P");
-						while(f_gets(read_buf,sizeof(read_buf),&PPG_fp)){
-							HAL_IWDG_Refresh(&hiwdg);
-							printf("%s",read_buf);
-						}
-						printf("F");
-						
-						printf("I");
-						while(f_gets(read_buf,sizeof(read_buf),&IMU_fp)){
-							HAL_IWDG_Refresh(&hiwdg);
-							printf("%s",read_buf);
-						}
-						printf("F");
-						
-						FIFO_Close();
-					}
-					break;
+		if(server_select == 1){
+			int16_t folderN = get_folderN();
+			if(folderN < server_dataN)
+				server_dataN = folderN;			
+			printf("O%04d",server_dataN);
+			
+			while(server_dataN){
+				if(folder_WR(server_dataN, hiwdg)){
+					error_code = 202;
+					Error_Handler();
 				}
+				server_dataN--;
 			}
 		}
-		else if(screen_status == LCD_AFSCREEN){
-			FIFO_Init_R(0);
-			uint8_t read_buf[20];
-			
-			printf("E\n");
-			while(f_gets(read_buf,sizeof(read_buf),&ECG_fp)){
-				HAL_IWDG_Refresh(&hiwdg);
-				printf("%s",read_buf);
+		if(server_select == 2){
+			int16_t folderN = get_folderN();
+			printf("O%04d",folderN);
+			while(folderN){
+				if(folder_WR(folderN, hiwdg)){
+					error_code = 202;
+					Error_Handler();
+				}
+				folderN--;
 			}
-			printf("F\n");
-			HAL_Delay(1000);
-			
-			FIFO_Close();
 		}
 	}
-	else {
-		
-	}
-	//find file
-	
+	printf("F");
 }
-void PPG_Update(void){
-	
+void PPG_Update(void) {
 	max86171_stat = MAX86171_readReg(PPG_STAT_1);
 	if((max86171_stat & 0xC0)) { //128bits interrupt
 		max86171_step = MAX86171_read_fifo(max86171_data); // 128fps		
@@ -2282,11 +1927,9 @@ void PPG_Update(void){
 		ECG_PPG_IMU_reset();
 		max86171_step = 0;
 	}
-	
 }
 
-void ECG_Update(void){
-	
+void ECG_Update(void) {
 	max30003_RegRead(STATUS,max30003_RxData);
 	if(max30003_RxData[1] & 0x80) // 16bits interrupt
 	{
@@ -2301,234 +1944,74 @@ void ECG_Update(void){
 	if(max30003_RxData[1] & 0x40){ // Fifo Overflow
 		ECG_PPG_IMU_reset();
 	}
-	
 }
 
-void IMU_Update(void){
-	
-	LSM6DS_FIFO_DATA_NUM(I2C_Stat);
-	if(I2C_Stat[0] & 0x6000){
-		spk_switch = 1;
-		ECG_PPG_IMU_reset();
-	}
-	else if(I2C_Stat[0] & 0x07ff)	{
-		I2C_Stat[0] = (int16_t)(I2C_Stat[0] & 0x07ff);	
-		if(I2C_Stat[0] >= 240)
-			LSM6DS_FIFO_DATA_OUT(I2C_BurstData, 240);
-		else
-			LSM6DS_FIFO_DATA_OUT(I2C_BurstData, I2C_Stat[0]);
-		
-	}
-	else
-	{
-		I2C_Stat[0] = (int16_t)(I2C_Stat[0] & 0x07ff);	
-	}
-	
-}
+//void IMU_Update(void) {
+//	
+//	LSM6DS_FIFO_DATA_NUM(I2C_Stat);
+//	if(I2C_Stat[0] & 0x6000){
+//		spk_switch = 1;
+//		ECG_PPG_IMU_reset();
+//	}
+//	else if(I2C_Stat[0] & 0x07ff)	{
+//		I2C_Stat[0] = (int16_t)(I2C_Stat[0] & 0x07ff);	
+//		if(I2C_Stat[0] >= 240)
+//			LSM6DS_FIFO_DATA_OUT(I2C_BurstData, 240);
+//		else
+//			LSM6DS_FIFO_DATA_OUT(I2C_BurstData, I2C_Stat[0]);
+//	}
+//	else
+//	{
+//		I2C_Stat[0] = (int16_t)(I2C_Stat[0] & 0x07ff);	
+//	}
+//	
+//}
 
-void Directory_check(void)
-{
-	uint8_t data_flag = 0;
-	
-	// data folder exist?
-	res = f_mkdir("/data");
-	if(res != FR_OK && res != FR_EXIST){
-		error_code=205;
-		Error_Handler();
-	}
-	
-	res = f_opendir(&dir, "/data");
-	if(res != FR_OK){
-		if(f_mkdir("/data") != FR_OK){
-			error_code=205;
-			Error_Handler();
-		}
-	}
-							
-	memset(&fno, 0, sizeof(FILINFO));
-	res = f_readdir(&dir, &fno);
-	if(res != FR_OK){
-		error_code = 205;
-		Error_Handler();
-	}	
-	if(fno.fattrib== AM_DIR || fno.fattrib== AM_ARC){ data_flag = 2; }
-	else if(fno.fattrib == 0x00){	data_flag = 1; }
-	else {
-		error_code=205;
-		Error_Handler();
-	}
-	f_closedir(&dir);
-	
-	// find old directory
-	f_opendir(&dir,"/");
-	while(true){
-		memset(&fno, 0, sizeof(FILINFO));
-		f_findnext(&dir,&fno);
-		if(fno.fname[0] == NULL){
-			// dir does not exist
-			strncpy(fno.fname,"O",1);
-			if(strstr(fno.fname,"OLD")==NULL) {					
-				res = f_rename("/data","/OLD1");
-				if(f_mkdir("data") != FR_OK || res != FR_OK){
-					error_code=205;
-					Error_Handler();
-				}
-			}
-			else {
-				//find old dir name
-				char *oldname = strtok(fno.fname," ");
-				char *dataPath = malloc((sizeof(oldname)+2));
-				uint8_t str_old = strlen(oldname);
-				
-				folder_count = 0;
-				for(uint8_t ii = strlen(oldname)-1;ii>2;ii--){
-					folder_count += (oldname[ii] - '0')*pow(10,strlen(oldname)-ii-1);
-				}
-				
-				do{
-					folder_count++;
-					
-					memset(dataPath,0,sizeof(dataPath));
-					sprintf(dataPath,"/OLD%d",folder_count);
-					
-					res = f_rename("/data",dataPath);
-				} while(res == FR_EXIST);
-				
-				if(res != FR_OK){
-					error_code=205;
-					Error_Handler();				
-				}
-				
-				if(data_flag == 2){
-					res = f_mkdir("data");
-					if(res != FR_OK){
-						error_code=205;
-						Error_Handler();
-					}
-				}
-				else if(data_flag == 1) {
-					folder_count--;
-					res = f_rename(dataPath,"/data");
-					if(res != FR_OK){
-						error_code=205;
-						Error_Handler();
-					}
-				}
-				
-			}
-			break;
-		}
-	}
-	f_closedir(&dir);
-	file_count++;
-		
-	/* read file name
-	int count_name=-1;
-	for(int i=strlen(fno.fname)-1;i>=0;i--)	{
-		if(fno.fname[i] == '_')
-			count_name = -1;
-		
-		if(count_name != -1){
-			file_count = (fno.fname[i] - '0')*pow(
-	10,count_name);
-			count_name++;
-		}
-		
-		if(fno.fname[i] == '.')
-			count_name = 0;		
-	}
-	*/
-	
-}
-void btn_flag_reset(void){
+
+void btn_flag_reset(void) {
+	// btn flag reset
 	left_btn = false;
 	sw_flag = 0;
-	pull_btn_time = 0;
 	sw_L_flag = 0;
 	sw_R_flag = 0;
 	sw_C_flag = 0;
+	pull_btn_time = 0;
+	btn_pressing = 0;
 }
 
-void ECG_PPG_IMU_reset(void){
+void ECG_PPG_IMU_reset(void) {
+	// ppg ecg imu buffer reset
 	max30003_Synch();
 	LSM6DS_Reset();
 	MAX86171_writeReg(PPG_FIFO_CONFIG_2, 0x1E);
-	if(screen_status == LCD_AFSCREEN && AF_layout == 0)
-		LSM6DS_GetBeing_polling(&LSM6DSM_IMUSetting ,I2C_RxData);
-	else
-		LSM6DS_GetBeing(&LSM6DSM_IMUSetting ,I2C_RxData);
+	LSM6DS_GetBeing_polling(&LSM6DSM_IMUSetting ,I2C_RxData);
+	iterator_IMU = 0;
+	iteratorFifoIMU = 0;
 }
-void dot_screen_moving(char dot_msg[]){
-	
-	strcpy(lcd_str,dot_msg);
-	switch(screen_dot){
-		case 0 : 
-			ST7789_WriteString2(30, 120, lcd_str, Font_11x18 , FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			break;
-		case 500 : 
-			strcat(lcd_str,".");
-			ST7789_WriteString2(30, 120, lcd_str, Font_11x18 , FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			break;
-		case 1000 : 
-			strcat(lcd_str,"..");
-			ST7789_WriteString2(30, 120, lcd_str, Font_11x18 , FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			break;
-		case 1500 : 
-			strcat(lcd_str,"...");
-			ST7789_WriteString2(30, 120, lcd_str, Font_11x18 , FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-			break;
-	}
-	
-	if(screen_dot >= 2000){
-		ST7789_DrawFilledRectangle2(&st7789_PFP, 0, 120, 240, 30, FLIP_RGB(BLACK));
-		screen_dot = 0;
-	}
-	else
-		screen_dot++;
-}
-void acc_warning(void){	
-	int16_t IMU_data = 0;
-	LSM6DS_GetGyroDataX(I2C_polling_data);
-	IMU_data += abs(I2C_polling_data[0]);
-	LSM6DS_GetGyroDataY(I2C_polling_data);
-	IMU_data += abs(I2C_polling_data[0]);
-	LSM6DS_GetGyroDataZ(I2C_polling_data);
-	IMU_data += abs(I2C_polling_data[0]);	
-	
-	if(IMU_data > 2000){
-		sprintf(lcd_str, "  ACC : %5d ",IMU_data);
-		ST7789_WriteString2(50, 170, lcd_str, Font_11x18, FLIP_RGB(RED), FLIP_RGB(BLACK));
-		HAL_Delay(1);
-	}
-	else{
-		sprintf(lcd_str, "  ACC : %5d ",IMU_data);
-		ST7789_WriteString2(50, 170, lcd_str, Font_11x18, FLIP_RGB(WHITE), FLIP_RGB(BLACK));
-		HAL_Delay(1);
-	}
-}
-void UF_speaker_ON(void)
-{
+
+void UF_speaker_ON(void) {
+	// speaker sound on
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
 	TIM3->ARR=250;
 	//TIM2->CCR2=(int)(325/2);
 	TIM3->CCR4=(int)(200/2);
 }
 
-void UF_speaker_OFF(void)
-{
+void UF_speaker_OFF(void) {
+	// speaker sound off
 	TIM3->CCR4=0;
 	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_4);
 }	
 
-void Set_StandbyMod(void)
-{
+void Set_StandbyMod(void) {
+	// turn off the watch
 	while(HAL_GPIO_ReadPin(SW2_GPIO_Port, SW2_Pin));
 	HAL_Delay(1000);
-	HAL_GPIO_WritePin(BLE_MOD_GPIO_Port, BLE_MOD_Pin, GPIO_PIN_RESET);
-  printf("AT+SLEEP");
-   
-  HAL_GPIO_WritePin(BLE_TX_GPIO_Port, BLE_TX_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(BLE_RX_GPIO_Port, BLE_RX_Pin, GPIO_PIN_RESET);
+//	HAL_GPIO_WritePin(BLE_MOD_GPIO_Port, BLE_MOD_Pin, GPIO_PIN_RESET);
+//  printf("AT+SLEEP");
+//   
+//  HAL_GPIO_WritePin(BLE_TX_GPIO_Port, BLE_TX_Pin, GPIO_PIN_RESET);
+//  HAL_GPIO_WritePin(BLE_RX_GPIO_Port, BLE_RX_Pin, GPIO_PIN_RESET);
 
 	HAL_IWDG_Refresh(&hiwdg);
 		
@@ -2545,10 +2028,10 @@ void Set_StandbyMod(void)
 	{
 		Error_Handler();
 	}
+	__HAL_RCC_CLEAR_RESET_FLAGS();
 	
 	HAL_GPIO_WritePin(VPP_EN_GPIO_Port,VPP_EN_Pin,GPIO_PIN_RESET);
 	
-	__HAL_RCC_CLEAR_RESET_FLAGS();
 	//스탠바이모드 진입
 	HAL_PWR_EnterSTANDBYMode();
 }
@@ -2567,16 +2050,42 @@ void Set_StandbyMod(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
-	
-	if(htim -> Instance == TIM6) // 127.96 Hz
+	// interrupt
+	if(htim -> Instance == TIM6) // 25Hz
 	{
+		LSM6DS_GetGyroAccAll(I2C_Polling_buffer);
+		bufferGYRO[iterator_IMU] = I2C_Polling_buffer[0] + I2C_Polling_buffer[1] + I2C_Polling_buffer[2];
+		bufferACC[iterator_IMU] = I2C_Polling_buffer[3] + I2C_Polling_buffer[4] + I2C_Polling_buffer[5];
+		if(iterator_IMU >= BLOCK_SIZE_FFT){
+			bufferGYRO[iterator_IMU - BLOCK_SIZE_FFT] = I2C_Polling_buffer[0] + I2C_Polling_buffer[1] + I2C_Polling_buffer[2];
+			bufferACC[iterator_IMU - BLOCK_SIZE_FFT] = I2C_Polling_buffer[3] + I2C_Polling_buffer[4] + I2C_Polling_buffer[5];
+			fifoGYRO[iterator_IMU - BLOCK_SIZE_FFT][0] = I2C_Polling_buffer[0];
+			fifoGYRO[iterator_IMU - BLOCK_SIZE_FFT][1] = I2C_Polling_buffer[1];
+			fifoGYRO[iterator_IMU - BLOCK_SIZE_FFT][2] = I2C_Polling_buffer[2];
+			fifoACC[iterator_IMU - BLOCK_SIZE_FFT][0] = I2C_Polling_buffer[3];
+			fifoACC[iterator_IMU - BLOCK_SIZE_FFT][1] = I2C_Polling_buffer[4];
+			fifoACC[iterator_IMU - BLOCK_SIZE_FFT][2] = I2C_Polling_buffer[5];			
+			
+			if(iterator_IMU == BLOCK_SIZE_FFT*2 - 1)
+				iterator_IMU=BLOCK_SIZE_FFT-1;
+		}else {			
+			fifoGYRO[iterator_IMU][0] = I2C_Polling_buffer[0];
+			fifoGYRO[iterator_IMU][1] = I2C_Polling_buffer[1];
+			fifoGYRO[iterator_IMU][2] = I2C_Polling_buffer[2];
+			fifoACC[iterator_IMU][0] = I2C_Polling_buffer[3];
+			fifoACC[iterator_IMU][1] = I2C_Polling_buffer[4];
+			fifoACC[iterator_IMU][2] = I2C_Polling_buffer[5];
+		}
+		iterator_IMU++;
 	}
 	else if(htim->Instance == TIM7) // 10Hz
 	{
-		if(time_flag2 != 0)
+		if(time_flag2)
 			time_flag2++;
-		if(pull_btn_time != 0)
+		if(pull_btn_time)
 			pull_btn_time++;
+		if(btn_pressing)
+			btn_pressing++;
 	}
 	
 
@@ -2597,7 +2106,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-	switch (error_code) {
+	switch (error_code) { // error code
 			case 100:
 				sprintf(error_msg,"ECG err");
 				break;
@@ -2629,7 +2138,7 @@ void Error_Handler(void)
 				sprintf(error_msg,"IMU err");	
 				break;			
 	}
-	ST7789_WriteString2(10, 100, error_msg, Font_16x26, FLIP_RGB(GREEN), FLIP_RGB(BLACK));
+	ST7789_WriteString(10, 100, error_msg, Font_16x26, FLIP_RGB(GREEN), FLIP_RGB(BLACK));
 	HAL_Delay(3000);	
   __disable_irq();
   while (1)

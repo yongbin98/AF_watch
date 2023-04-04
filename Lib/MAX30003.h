@@ -2,8 +2,6 @@
 #define __MAX30003_H
 
 #include "main.h"
-#include "stdbool.h"
-
 
 //USER SETTING START***********************************************************************
 //============================================================================================================================
@@ -43,12 +41,6 @@ extern SPI_HandleTypeDef 				MAX30003_SPI_PORT;
 #define   NO_OP_2         0x7F
 
 #define RTOR_INTR_MASK     0x04
-
-typedef struct __attribute__((__packed__)) {
-	uint32_t	tag  : 3;	/* ETAG data from the ECG_FIFO	*/
-	uint32_t	step : 11;	/* time step of the sample		*/
-  int32_t		data : 18;	/* voltage of the sample		*/
-}MAX30003;
 
 typedef enum
 {

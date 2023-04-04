@@ -79,14 +79,14 @@ uint16_t MAX86171_decode_fifo(uint16_t count, uint8_t data_buffer[], MAX86171 ma
 	for(int i=0; i<count; i++) // run
 	{
 		max86171[i].tag = (data_buffer[i*3+2] >> 4 ) & 0x0f;
-		max86171[i].led = ((data_buffer[i*3+2] << 16 ) | (data_buffer[i*3+3] << 8 ) | (data_buffer[i*3+4])) & 0x0fffff;
+		max86171[i].data = ((data_buffer[i*3+2] << 16 ) | (data_buffer[i*3+3] << 8 ) | (data_buffer[i*3+4])) & 0x0fffff;
 				
 		switch(max86171[i].tag){
 			case PPG_DARK_DATA: //Dark data captured 
 			case PPG_ALC_OVF_DATA: // ALC overflow
 			case PPG_EXP_OVF_DATA: // Exposure Overflow
 			case PPG_PF_DATA: //Picket Fence detected
-				max86171[i].led = 0;
+				max86171[i].data = 0;
 				break;
 			case PPG_INVALID_DATA: // Empty FIFO				
 				count = i;
@@ -241,11 +241,16 @@ void MAX86171_adjust_clock(uint8_t clock_normal ,uint32_t rate){
 	MAX86171_writeReg(PPG_FR_CLK_FREQ, protocol); // Internal Clock, No clock fine tune
 	protocol = 0x00;
 	printf("%d",protocol);
-	
+		
 	// Clock / MSB+LSB = sps
 	if(clock_normal == 1){		clock_rate = 32768/rate;	}
 	else{		clock_rate = 32700/rate;	}
 	printf("%d",clock_rate);
+	
+	if(rate == 25)
+		clock_rate = 1314;
+	else if(rate == 50)
+		clock_rate = 657;
 	
 	protocol |= (uint8_t) (clock_rate/256); // FR_CLK_DIV_MSB
 	MAX86171_writeReg(PPG_FR_CLK_MSB, protocol); 

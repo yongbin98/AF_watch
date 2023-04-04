@@ -14,16 +14,18 @@ extern SPI_HandleTypeDef ST7789_SPI_PORT;
  * you could find them in main.h 
  * and use them below  
  */   
+ 
+#define USE_DMA
 
 /* Define the pins tp connect */
-// =================================GPIO 설정===========================================
+// =================================GPIO ????===========================================
 
 #define ST7789_RST_PORT 	LCD_RES_GPIO_Port
 #define ST7789_RST_PIN 		LCD_RES_Pin
 #define ST7789_DC_PORT		LCD_DC_GPIO_Port
-#define ST7789_DC_PIN 			LCD_DC_Pin
+#define ST7789_DC_PIN 		LCD_DC_Pin
 
-//===============================CS가 있을경우==========================================
+//===============================CS O==========================================
 
 //#define ST7789_CS_PORT		LCD_CS_GPIO_Port
 //#define ST7789_CS_PIN			LCD_CS_Pin
@@ -31,12 +33,9 @@ extern SPI_HandleTypeDef ST7789_SPI_PORT;
 //#define ST7789_Select() HAL_GPIO_WritePin(ST7789_CS_PORT, ST7789_CS_PIN, GPIO_PIN_RESET)
 //#define ST7789_UnSelect() HAL_GPIO_WritePin(ST7789_CS_PORT, ST7789_CS_PIN, GPIO_PIN_SET)
 
-//===============================CS가 없을경우==========================================
+//===============================CS X==========================================
 #define ST7789_Select()				{}
 #define ST7789_UnSelect() 			{}
-
-	
-	
 
 #define RGBto565(r,g,b) ((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3)) 
 
@@ -57,12 +56,8 @@ extern SPI_HandleTypeDef ST7789_SPI_PORT;
 //#define USING_135X240
 #define USING_240X240
 
-
 /* Choose a display rotation you want to use: (0-3) */
-//#define ST7789_ROTATION 0
-//#define ST7789_ROTATION 1       
-#define ST7789_ROTATION 2				//  use Normally on 240x240
-//#define ST7789_ROTATION 3
+#define ST7789_ROTATION 2 //  use Normally on 240x240
 
 #ifdef USING_135X240
 
@@ -116,6 +111,39 @@ extern SPI_HandleTypeDef ST7789_SPI_PORT;
 		#endif
 
 #endif
+
+#ifdef USING_172X320
+
+    #if ST7789_ROTATION == 0
+        #define ST7789_WIDTH 172
+        #define ST7789_HEIGHT 320
+        #define X_SHIFT 34
+        #define Y_SHIFT 0
+    #endif
+
+    #if ST7789_ROTATION == 1
+        #define ST7789_WIDTH 320
+        #define ST7789_HEIGHT 172
+        #define X_SHIFT 0
+        #define Y_SHIFT 34
+    #endif
+
+    #if ST7789_ROTATION == 2
+        #define ST7789_WIDTH 172
+        #define ST7789_HEIGHT 320
+        #define X_SHIFT 34
+        #define Y_SHIFT 0
+    #endif
+
+    #if ST7789_ROTATION == 3
+        #define ST7789_WIDTH 320
+        #define ST7789_HEIGHT 172
+        #define X_SHIFT 0
+        #define Y_SHIFT 34
+    #endif
+
+#endif
+
 
 /**
  *Color of pen
@@ -212,67 +240,30 @@ extern SPI_HandleTypeDef ST7789_SPI_PORT;
 
 #define ABS(x) ((x) > 0 ? (x) : -(x))
 
-
-
-
-typedef struct
-{
-	uint16_t LCD_buffer[240][240];
-
-}st7789;
-
-
 /* Basic functions. */
-void ST7789_Init(st7789 *st7789);
+void ST7789_Init(void);
 void ST7789_SetRotation(uint8_t m);
-void ST7789_Fill_Color(uint16_t color);
+void ST7789_Fill_Color(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
 void ST7789_DrawPixel(uint16_t x, uint16_t y, uint16_t color);
-void ST7789_Fill(uint16_t xSta, uint16_t ySta, uint16_t xEnd, uint16_t yEnd, uint16_t color);
-void ST7789_DrawPixel_4px(uint16_t x, uint16_t y, uint16_t color);
 
 /* Graphical functions. */
 void ST7789_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
-void ST7789_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
-void ST7789_DrawCircle(uint16_t x0, uint16_t y0, uint8_t r, uint16_t color);
 void ST7789_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *data);
-void ST7789_InvertColors(uint8_t invert);
 
 /* Text functions. */
-void ST7789_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor);
 void ST7789_WriteString(uint16_t x, uint16_t y, const char *str, FontDef font, uint16_t color, uint16_t bgcolor);
-
-/* Extented Graphical functions. */
-void ST7789_DrawFilledRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
-void ST7789_DrawTriangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t x3, uint16_t y3, uint16_t color);
-void ST7789_DrawFilledTriangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t x3, uint16_t y3, uint16_t color);
-void ST7789_DrawFilledCircle(int16_t x0, int16_t y0, int16_t r, uint16_t color);
-
-/* Command functions */
-void ST7789_TearEffect(uint8_t tear);
-
-/* Simple test function. */
-void ST7789_Test(void);
-
-void ST7789_DrawFilledRectangle2(st7789 *st7789, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
-
-static void ST7789_WriteData16(uint16_t *buff, size_t buff_size);
-void rgb_filp_array(st7789 *st7789, uint16_t x, uint16_t y);
-void ST7789_DrawImage_Flip(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *data);
-void ST7789_WriteChar2(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor);
-void ST7789_WriteString2(uint16_t x, uint16_t y, const char *str, FontDef font, uint16_t color, uint16_t bgcolor);
-void ST7789_WriteString3(uint16_t x, uint16_t y, const char *str, FontDef font, uint16_t color, uint16_t bgcolor, uint8_t fontsize);
-void ST7789_WriteString4(uint16_t x, uint16_t y, const char *str, FontDef2 font, uint16_t color, uint16_t bgcolor);
-
 
 #if !defined(USING_240X240)
 	#if !defined(USING_135X240)
-	    #error 	You should at least choose one display resolution!
+		
 	#endif
 #endif
 
 #if !defined(USING_135X240)
 	#if !defined(USING_240X240)
-	    #error 	You should at least choose one display resolution!
+	    #if !defined(USING_172X320)
+				#error 	You should at least choose one display resolution!
+			#endif
 	#endif
 #endif
 

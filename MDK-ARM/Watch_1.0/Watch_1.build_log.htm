@@ -21,34 +21,28 @@ Target DLL:      STLink\ST-LINKIII-KEIL_SWO.dll V3.0.9.0
 Dialog DLL:      TCM.DLL V1.53.0.0
  
 <h2>Project:</h2>
-C:\Users\AW_Lab_LYB\Documents\STM32\Watch_V1.8 (AF Update)\MDK-ARM\Watch_1.0.uvprojx
-Project File Date:  11/17/2022
+C:\Users\AW_Lab_LYB\Documents\STM32\Watch_V2.3 (Prototype)\MDK-ARM\Watch_1.0.uvprojx
+Project File Date:  01/26/2023
 
 <h2>Output:</h2>
 *** Using Compiler 'V5.06 update 7 (build 960)', folder: 'C:\Keil_v5\ARM\ARMCC\Bin'
 Build target 'Watch_1.0'
-compiling main.c...
+compiling MAX30003.c...
 ../Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f413xx.h(52): warning:  #47-D: incompatible redefinition of macro "__FPU_PRESENT" 
   #define __FPU_PRESENT             1U       /*!< FPU present                                   */
-../Lib/fir_constants.h(77): warning:  #1-D: last line of file ends without a newline
-  #endif	
-../Lib/AF_detect.h(22): warning:  #1-D: last line of file ends without a newline
+..\Lib\MAX30003.c: 1 warning, 0 errors
+compiling lcdscreen.c...
+../Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f413xx.h(52): warning:  #47-D: incompatible redefinition of macro "__FPU_PRESENT" 
+  #define __FPU_PRESENT             1U       /*!< FPU present                                   */
+..\Lib\lcdscreen.h(28): warning:  #1-D: last line of file ends without a newline
   #endif
-../Core/Src/main.c(1311): warning:  #188-D: enumerated type mixed with another type
-  		res = BSP_SD_Init();
-../Core/Src/main.c(2228): warning:  #167-D: argument of type "uint8_t *" is incompatible with parameter of type "TCHAR *"
-  						while(f_gets(read_buf,sizeof(read_buf),&ECG_fp)){
-../Core/Src/main.c(2235): warning:  #167-D: argument of type "uint8_t *" is incompatible with parameter of type "TCHAR *"
-  						while(f_gets(read_buf,sizeof(read_buf),&PPG_fp)){
-../Core/Src/main.c(2242): warning:  #167-D: argument of type "uint8_t *" is incompatible with parameter of type "TCHAR *"
-  						while(f_gets(read_buf,sizeof(read_buf),&IMU_fp)){
-../Core/Src/main.c(2259): warning:  #167-D: argument of type "uint8_t *" is incompatible with parameter of type "TCHAR *"
-  			while(f_gets(read_buf,sizeof(read_buf),&ECG_fp)){
-../Core/Src/main.c: 8 warnings, 0 errors
+..\Lib\lcdscreen.c(432): warning:  #1-D: last line of file ends without a newline
+  }
+..\Lib\lcdscreen.c: 3 warnings, 0 errors
 linking...
-Program Size: Code=77484 RO-data=72436 RW-data=244 ZI-data=272820  
+Program Size: Code=86910 RO-data=247570 RW-data=252 ZI-data=181308  
 FromELF: creating hex file...
-"Watch_1.0\Watch_1.0" - 0 Error(s), 8 Warning(s).
+"Watch_1.0\Watch_1.0" - 0 Error(s), 4 Warning(s).
 
 <h2>Software Packages used:</h2>
 
@@ -89,7 +83,7 @@ Package Vendor: Keil
 
    * Component: Keil.ARM Compiler::Compiler:I/O:STDOUT:ITM:1.2.0
       Source file:   Source\retarget_io.c
-Build Time Elapsed:  00:00:03
+Build Time Elapsed:  00:00:02
 </pre>
 </body>
 </html>

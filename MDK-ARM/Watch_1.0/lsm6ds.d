@@ -42,3 +42,4 @@ watch_1.0\lsm6ds.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
 watch_1.0\lsm6ds.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
 watch_1.0\lsm6ds.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h
 watch_1.0\lsm6ds.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h
+watch_1.0\lsm6ds.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h

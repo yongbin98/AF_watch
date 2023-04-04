@@ -64,13 +64,13 @@ MAX30003_RETURN MAX30003_init()
 	HAL_Delay(100);
 	max30003_RegWrite(MNGR_INT, 0x800004); // FIFO interrupt 16bits
 	HAL_Delay(100);
-	max30003_RegWrite(CNFG_GEN, 0x081017); // ECG Enable, DC lead-off detect, R(bias) 100MF
+	max30003_RegWrite(CNFG_GEN, 0x081013); // ECG Enable, R(bias) 50MF
 	HAL_Delay(100);
-	max30003_RegWrite(CNFG_CAL, 0x704000); // Calibration enable, 1 Hz
+	max30003_RegWrite(CNFG_CAL, 0x601000); // Calibration enable, 1 Hz
 	HAL_Delay(100);
-	max30003_RegWrite(CNFG_EMUX,0x8B0000); // ECG inverted, ECGP N connect to VCAL P N, 
+	max30003_RegWrite(CNFG_EMUX,0x0B0000); // ECG inverted, ECGP N connect to VCAL P N, 
 	HAL_Delay(100);
-	max30003_RegWrite(CNFG_ECG, 0x805000); // 128sps, 20v/v, 0.5hz HPF, 40hz LPF
+	max30003_RegWrite(CNFG_ECG, 0x834000); // 128sps, 20v/v, 0.5hz HPF
 	HAL_Delay(100);
 
 	max30003_RegWrite(CNFG_RTOR1,0x3FA300); // R to R EN, 96ms Auto scaling, 
@@ -82,7 +82,6 @@ MAX30003_RETURN MAX30003_init()
 	
 	return MAX30003_SUCCESS;
 }
-
 
 int32_t max30003_getEcgSamples(void)
 {

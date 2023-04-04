@@ -390,6 +390,24 @@ void LSM6DS_GetGyroDataZ(int16_t* getDataPointer)	//
 	*getDataPointer = output;
 }
 
+void LSM6DS_GetGyroAccAll(int16_t get_dataPointer[6]){
+	int16_t i2c_data[1];
+	
+	LSM6DS_GetGyroDataX(i2c_data);
+	get_dataPointer[0] = i2c_data[0];
+	LSM6DS_GetGyroDataY(i2c_data);
+	get_dataPointer[1] = i2c_data[0];
+	LSM6DS_GetGyroDataZ(i2c_data);
+	get_dataPointer[2] = i2c_data[0];
+	LSM6DS_GetAccelDataX(i2c_data);
+	get_dataPointer[3] = i2c_data[0];
+	LSM6DS_GetAccelDataY(i2c_data);
+	get_dataPointer[4] = i2c_data[0];
+	LSM6DS_GetAccelDataZ(i2c_data);
+	get_dataPointer[5] = i2c_data[0];
+	
+}
+
 void LSM6DS_FIFO_DATA_NUM(int16_t* getDataPointer)	//
 {
 	uint8_t myBuffer[1];

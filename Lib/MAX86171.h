@@ -1,10 +1,7 @@
 #ifndef __MAX86171_H
 #define __MAX86171_H
 
-#include "stm32f4xx_hal.h"
 #include "main.h"
-#include <string.h>
-#include <stdio.h>
 
 //USER SETTING START***********************************************************************
 //============================================================================================================================
@@ -205,10 +202,6 @@ typedef enum
 	MAX86171_FAILURE	 = 0
 }MAX86171_RETURN;
 
-typedef struct __attribute__((__packed__)) {
-	uint32_t tag : 4;
-	int32_t led : 20;
-}MAX86171;
 
 void MAX86171_writeReg(uint8_t address, uint8_t data);
 uint8_t MAX86171_readReg(uint8_t address);
