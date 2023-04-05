@@ -4,7 +4,7 @@ This repository contains the smartwatch code used in the PPG/ECG Wearable Device
 
 The watch is equipped with the following components:
 
-PPG sensor: MAX86171
+PPG sensor: MAX86171<br>
 ECG sensor: MAX30003
 IMU sensor: LSM6DS
 LCD display: ST7789
