@@ -16,4 +16,10 @@ The following protocols are used:
 - ARM::CMSIS: ver 5.8.0
 - ARM::DSP: ver 1.9.0
 
+The hardware architectures:
+![Fig5](https://github.com/yongbin98/AF_watch/assets/118417705/7da19fcf-9c2b-4087-8b5c-f6a7bbbdd5fa)
+
+The Developed wearable watch :
+![Fig2](https://github.com/yongbin98/AF_watch/assets/118417705/496cf7f0-cb2b-47fb-b8d9-20701114357a)
+
 The code was developed in the Keil IDE.
